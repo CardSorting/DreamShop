@@ -27,15 +27,19 @@ export async function scrapeTab(tab) {
       func: scrapeProductFromPage
     });
 
+    const scriptResults = result?.result || [];
+    const products = Array.isArray(scriptResults) ? scriptResults : [scriptResults];
+
     return {
       ok: true,
       tab,
-      product: {
-        ...(result?.result || {}),
-        source_url: tab.url || result?.result?.source_url || "",
-        source_tab_title: tab.title || result?.result?.source_tab_title || ""
-      }
+      products: products.map(p => ({
+        ...p,
+        source_url: tab.url || p.source_url || "",
+        source_tab_title: tab.title || p.source_tab_title || ""
+      }))
     };
+
   } catch (error) {
     return {
       ok: false,

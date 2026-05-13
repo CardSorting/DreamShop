@@ -3,43 +3,106 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DreamShop CSV Scraper</title>
+    <title>DreamShop | Intelligence Engine</title>
     <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
-    <main class="popup-shell">
-      <header class="hero">
-        <p class="eyebrow">DreamShop</p>
-        <h1>Product CSV Scraper</h1>
-        <p class="lede">Scrape user-opened product tabs and export one generic shop-agnostic CSV.</p>
+    <div class="glass-container">
+      <header class="app-header">
+        <div class="logo-area">
+          <div class="logo-icon">DS</div>
+          <div class="brand-meta">
+            <span class="brand-name">DreamShop</span>
+            <span class="brand-tagline">Commerce Intelligence</span>
+          </div>
+        </div>
+        <nav class="tab-nav">
+          <button id="tabCapture" class="tab-btn active" data-tab="capture">Capture</button>
+          <button id="tabInventory" class="tab-btn" data-tab="inventory">Inventory</button>
+        </nav>
       </header>
 
-      <section class="actions" aria-label="Scraper actions">
-        <button id="scrapeActiveButton" type="button">Scrape active tab</button>
-        <button id="scrapeAllButton" type="button" class="secondary">Scrape all open tabs</button>
-        <button id="downloadButton" type="button" class="success" disabled>Download CSV</button>
-      </section>
+      <main class="content-area">
+        <!-- Capture Tab Content -->
+        <div id="captureView" class="tab-content active">
+          <section class="quick-actions">
+            <button id="scrapeActiveButton" class="action-card">
+              <span class="action-icon">🎯</span>
+              <div class="action-text">
+                <strong>Current Page</strong>
+                <p>Scrape active tab</p>
+              </div>
+            </button>
+            <button id="scrapeAllButton" class="action-card secondary">
+              <span class="action-icon">🌐</span>
+              <div class="action-text">
+                <strong>All Tabs</strong>
+                <p>Scan all open shops</p>
+              </div>
+            </button>
+          </section>
 
-      <section class="status-panel" aria-live="polite">
-        <strong id="statusText">Ready to scrape.</strong>
-        <span id="recordCount">0 products captured</span>
-      </section>
-
-      <section class="preview-panel">
-        <div class="panel-heading">
-          <h2>Preview</h2>
-          <button id="clearButton" type="button" class="link-button" disabled>Clear</button>
+          <section class="recent-capture">
+            <div class="section-header">
+              <h2>Last Capture</h2>
+              <span id="recordCount" class="badge">0 items</span>
+            </div>
+            <div id="previewList" class="preview-scroll empty">
+              <div class="empty-state">
+                <span class="empty-icon">🔍</span>
+                <p>No products found yet.</p>
+                <p class="sub-text">Navigate to a shop and click "Current Page"</p>
+              </div>
+            </div>
+          </section>
         </div>
-        <div id="previewList" class="preview-list empty">No products scraped yet.</div>
-      </section>
 
-      <section class="message-panel">
-        <h2>Warnings</h2>
-        <ul id="messageList" class="message-list">
-          <li>No warnings.</li>
+        <!-- Inventory Tab Content -->
+        <div id="inventoryView" class="tab-content">
+          <section class="inventory-controls">
+            <div class="section-header">
+              <h2>Export Data</h2>
+              <button id="clearButton" class="text-btn" disabled>Clear All</button>
+            </div>
+            <button id="downloadButton" class="primary-btn" disabled>
+              <span class="icon">⬇️</span> Download CSV Export
+            </button>
+          </section>
+
+          <section class="inventory-stats">
+            <div class="stat-grid">
+              <div class="stat-card">
+                <span class="stat-label">Total Rows</span>
+                <span id="totalRows" class="stat-value">0</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Sources</span>
+                <span id="sourceCount" class="stat-value">0</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <footer class="app-footer">
+        <div id="statusIndicator" class="status-pill">
+          <span class="pulse"></span>
+          <span id="statusText">System Ready</span>
+        </div>
+        <div id="messageToggle" class="warning-trigger" title="View Logs">⚠️</div>
+      </footer>
+
+      <!-- Logs Overlay -->
+      <div id="logsOverlay" class="overlay">
+        <div class="overlay-header">
+          <h3>System Logs</h3>
+          <button id="closeLogs" class="close-btn">&times;</button>
+        </div>
+        <ul id="messageList" class="log-list">
+          <li>System initialized.</li>
         </ul>
-      </section>
-    </main>
+      </div>
+    </div>
 
     <script type="module" src="./popup.js"></script>
   </body>

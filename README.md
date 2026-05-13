@@ -1,29 +1,32 @@
-# DreamShop Product CSV Scraper
+# DreamShop | Commerce Intelligence Engine
 
-DreamShop Product CSV Scraper is a build-free Google Chrome extension that reads product information from user-opened tabs and exports a single generic CSV for shop population or dropshipping research workflows.
+**DreamShop** is an industrial-grade Chrome Manifest V3 extension designed for high-velocity product data extraction. It transforms user-opened product tabs into structured commercial intelligence, ready for catalog population or forensic market analysis.
 
-The extension only uses page content available in tabs you already opened. It does not bypass logins, paywalls, captchas, anti-bot systems, or marketplace restrictions.
+## Elite-Tier Features
 
-## Generic CSV columns
+- **Multi-Product Intelligence**: Automatically detects and scrapes multiple products from collection pages or search results using a multi-layered extraction engine.
+- **Deep Data Harvesting**: Support for JSON-LD (including complex `@graph` nodes), Schema.org Microdata, and OpenGraph metadata.
+- **Universal Normalization**: Deterministically transforms fragmented shop data into a stable, industry-standard CSV schema.
+- **Glassmorphic Interface**: A premium, world-class UI with tabbed navigation and real-time capture analytics.
+- **Forensic Logs & Stats**: Real-time auditing of scraping operations and source attribution tracking.
 
-The exported CSV uses one shop-agnostic format:
+## Universal CSV Columns
+
+The Intelligence Engine exports data in a stable, shop-agnostic format:
 
 ```csv
 source_site,source_url,source_tab_title,title,description,price,currency,compare_at_price,availability,brand,vendor,sku,category,tags,image_url,additional_image_urls,variant_name,variant_value,shipping_origin,rating,review_count,notes,scraped_at
 ```
 
-These columns are intended for your own catalog-building process, spreadsheets, enrichment tools, or custom import scripts. They are not official Etsy, AliExpress, Walmart, Amazon, Shopify, or WooCommerce upload templates.
+## Advanced Extraction Strategy
 
-## How scraping works
+For each targeted tab, the engine executes a prioritized intelligence gathering sequence:
 
-For each selected tab, the extension tries safe browser-accessible sources in this order:
+1. **Structured Data Layer**: JSON-LD Product & Offer graphs + Microdata `itemprop` scanning.
+2. **Meta Layer**: OpenGraph, Twitter, and Product meta-tag forensic analysis.
+3. **DOM Layer**: Heuristic-based selector matching for common marketplace patterns.
+4. **Context Layer**: Source-site attribution and tab context injection.
 
-1. JSON-LD product schema (`application/ld+json`)
-2. OpenGraph, Twitter, and product meta tags
-3. Common product-page DOM selectors
-4. Generic page title/image fallbacks
-
-Supported source-site detection includes Amazon, Walmart, Etsy, AliExpress/Alibaba, eBay, Shopify-hosted stores, and generic domains. Source detection is only written to `source_site`; it does not change the CSV structure.
 
 ## Install in Chrome
 

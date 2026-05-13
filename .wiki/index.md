@@ -9,12 +9,13 @@ DreamShop is a Google Chrome Manifest V3 extension that scrapes product-like dat
 - `manifest.json` — Chrome extension metadata, popup registration, permissions, and http/https host access for user-opened tabs.
 - `src/domain/productRecord.js` — pure product record columns, source-site detection, normalization, and validation.
 - `src/utils/csv.js` — pure CSV serialization, CSV cell escaping, and timestamped filename generation.
-- `src/infrastructure/contentProductScraper.js` — injected page scraper for JSON-LD, meta tags, and common DOM product selectors.
-- `src/infrastructure/chromeTabs.js` — Chrome tab querying, script injection, and CSV download adapter.
-- `src/core/productExportCoordinator.js` — orchestration for active/all-tab scraping, normalization, validation warnings, CSV creation, and download.
-- `src/ui/popup.html` — extension popup markup.
-- `src/ui/popup.css` — popup styling.
-- `src/ui/popup.js` — popup event handling, preview rendering, scrape actions, and CSV download action.
+- `src/infrastructure/contentProductScraper.js` — multi-strategy engine supporting JSON-LD (including @graph), Microdata (itemprop), and Meta-tag extraction.
+- `src/infrastructure/chromeTabs.js` — high-fidelity tab orchestration and CSV persistence.
+- `src/core/productExportCoordinator.js` — batch processing for multi-product captures.
+- `src/ui/popup.html` — redesigned glassmorphic interface with tabbed navigation.
+- `src/ui/popup.css` — premium design system with dark mode support.
+- `src/ui/popup.js` — state management for the Intelligence Engine.
+
 - `README.md` — install, usage, permissions, CSV columns, and limitations documentation.
 - `.wiki/verification.md` — structural audit, verification commands, layer audit, and behavior boundary record.
 

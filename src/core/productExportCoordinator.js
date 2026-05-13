@@ -42,16 +42,19 @@ async function scrapeTabsToProductSet(tabs) {
       continue;
     }
 
-    const product = normalizeProductRecord(result.product, {
-      title: result.tab?.title || "",
-      source_tab_title: result.tab?.title || "",
-      source_url: result.tab?.url || ""
-    });
+    for (const rawProduct of result.products) {
+      const product = normalizeProductRecord(rawProduct, {
+        title: result.tab?.title || "",
+        source_tab_title: result.tab?.title || "",
+        source_url: result.tab?.url || ""
+      });
 
-    const validationWarnings = validateProductRecord(product);
-    validationWarnings.forEach((warning) => warnings.push(formatTabMessage(result.tab, warning)));
-    products.push(product);
+      const validationWarnings = validateProductRecord(product);
+      validationWarnings.forEach((warning) => warnings.push(formatTabMessage(result.tab, `${product.title || "Unknown"}: ${warning}`)));
+      products.push(product);
+    }
   }
+
 
   return { products, warnings, failures };
 }

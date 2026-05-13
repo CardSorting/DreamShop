@@ -4,10 +4,15 @@ const state = {
   products: [],
   warnings: [],
   failures: [],
-  busy: false
+  busy: false,
+  activeTab: "capture"
 };
 
 const elements = {
+  tabCapture: document.querySelector("#tabCapture"),
+  tabInventory: document.querySelector("#tabInventory"),
+  captureView: document.querySelector("#captureView"),
+  inventoryView: document.querySelector("#inventoryView"),
   scrapeActiveButton: document.querySelector("#scrapeActiveButton"),
   scrapeAllButton: document.querySelector("#scrapeAllButton"),
   downloadButton: document.querySelector("#downloadButton"),
@@ -15,30 +20,42 @@ const elements = {
   statusText: document.querySelector("#statusText"),
   recordCount: document.querySelector("#recordCount"),
   previewList: document.querySelector("#previewList"),
-  messageList: document.querySelector("#messageList")
+  messageList: document.querySelector("#messageList"),
+  totalRows: document.querySelector("#totalRows"),
+  sourceCount: document.querySelector("#sourceCount"),
+  messageToggle: document.querySelector("#messageToggle"),
+  logsOverlay: document.querySelector("#logsOverlay"),
+  closeLogs: document.querySelector("#closeLogs")
 };
 
-elements.scrapeActiveButton.addEventListener("click", () => runScrape(scrapeActiveTabProducts, "Scraping active tab..."));
-elements.scrapeAllButton.addEventListener("click", () => runScrape(scrapeAllOpenTabProducts, "Scraping open tabs..."));
+// Event Listeners
+elements.tabCapture.addEventListener("click", () => switchTab("capture"));
+elements.tabInventory.addEventListener("click", () => switchTab("inventory"));
+elements.scrapeActiveButton.addEventListener("click", () => runScrape(scrapeActiveTabProducts, "Analyzing active tab..."));
+elements.scrapeAllButton.addEventListener("click", () => runScrape(scrapeAllOpenTabProducts, "Scanning all open tabs..."));
 elements.downloadButton.addEventListener("click", downloadCsv);
 elements.clearButton.addEventListener("click", clearProducts);
+elements.messageToggle.addEventListener("click", () => elements.logsOverlay.classList.toggle("active"));
+elements.closeLogs.addEventListener("click", () => elements.logsOverlay.classList.remove("active"));
 
 render();
 
 async function runScrape(scrapeAction, busyMessage) {
   setBusy(true, busyMessage);
-
   try {
     const result = await scrapeAction();
+    // The coordinator might return a single result or a list of results if it handles multiple tabs
+    // In this case, result.products is already an array from contentProductScraper.js
     state.products = dedupeProducts([...state.products, ...result.products]);
     state.warnings = [...state.warnings, ...result.warnings];
     state.failures = [...state.failures, ...result.failures];
+    
     elements.statusText.textContent = result.products.length
-      ? `Captured ${result.products.length} product${result.products.length === 1 ? "" : "s"}.`
-      : "No products captured from that scrape.";
+      ? `Intelligence gathered: ${result.products.length} items.`
+      : "No commercial data found.";
   } catch (error) {
-    state.failures = [...state.failures, error?.message || "Unexpected scrape failure."];
-    elements.statusText.textContent = "Scrape failed.";
+    state.failures.push(error?.message || "Internal engine failure.");
+    elements.statusText.textContent = "Operation failed.";
   } finally {
     setBusy(false);
     render();
@@ -46,122 +63,139 @@ async function runScrape(scrapeAction, busyMessage) {
 }
 
 async function downloadCsv() {
-  if (!state.products.length) {
-    return;
-  }
-
-  setBusy(true, "Preparing CSV download...");
-
+  if (!state.products.length) return;
+  setBusy(true, "Compiling export...");
   try {
     await downloadGenericProductCsv(state.products);
-    elements.statusText.textContent = "CSV download started.";
+    elements.statusText.textContent = "Export dispatched.";
   } catch (error) {
-    state.failures = [...state.failures, error?.message || "CSV download failed."];
-    elements.statusText.textContent = "CSV download failed.";
+    state.failures.push(error?.message || "Export failure.");
+    elements.statusText.textContent = "Export failed.";
   } finally {
     setBusy(false);
     render();
   }
 }
 
+function switchTab(tabId) {
+  state.activeTab = tabId;
+  render();
+}
+
 function clearProducts() {
   state.products = [];
   state.warnings = [];
   state.failures = [];
-  elements.statusText.textContent = "Cleared scraped products.";
+  elements.statusText.textContent = "Intelligence purged.";
   render();
 }
 
 function setBusy(isBusy, message) {
   state.busy = isBusy;
-
-  if (message) {
-    elements.statusText.textContent = message;
-  }
-
+  if (message) elements.statusText.textContent = message;
   render();
 }
 
 function render() {
+  // Tab UI
+  elements.tabCapture.classList.toggle("active", state.activeTab === "capture");
+  elements.tabInventory.classList.toggle("active", state.activeTab === "inventory");
+  elements.captureView.classList.toggle("active", state.activeTab === "capture");
+  elements.inventoryView.classList.toggle("active", state.activeTab === "inventory");
+
+  // Button States
   elements.scrapeActiveButton.disabled = state.busy;
   elements.scrapeAllButton.disabled = state.busy;
   elements.downloadButton.disabled = state.busy || !state.products.length;
   elements.clearButton.disabled = state.busy || (!state.products.length && !state.warnings.length && !state.failures.length);
-  elements.recordCount.textContent = `${state.products.length} product${state.products.length === 1 ? "" : "s"} captured`;
+
+  // Stats
+  elements.recordCount.textContent = `${state.products.length} item${state.products.length === 1 ? "" : "s"}`;
+  elements.totalRows.textContent = state.products.length;
+  elements.sourceCount.textContent = new Set(state.products.map(p => p.source_site)).size;
+
   renderPreview();
   renderMessages();
 }
 
 function renderPreview() {
-  elements.previewList.replaceChildren();
+  elements.previewList.innerHTML = "";
 
   if (!state.products.length) {
     elements.previewList.classList.add("empty");
-    elements.previewList.textContent = "No products scraped yet.";
+    elements.previewList.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">🔍</span>
+        <p>No products found yet.</p>
+        <p class="sub-text">Navigate to a shop and click "Current Page"</p>
+      </div>`;
     return;
   }
 
   elements.previewList.classList.remove("empty");
 
-  for (const product of state.products.slice(0, 20)) {
-    const card = document.createElement("article");
+  state.products.slice().reverse().slice(0, 15).forEach(product => {
+    const card = document.createElement("div");
     card.className = "product-card";
 
-    const image = document.createElement("img");
-    image.alt = "";
-    image.src = product.image_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='54' height='54' viewBox='0 0 54 54'%3E%3Crect width='54' height='54' fill='%23efe7dc'/%3E%3Cpath d='M15 36l8-10 6 7 4-5 6 8H15z' fill='%23bfae9c'/%3E%3Ccircle cx='20' cy='19' r='4' fill='%23bfae9c'/%3E%3C/svg%3E";
+    const img = document.createElement("img");
+    img.className = "product-img";
+    img.src = product.image_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23e2e8f0'/%3E%3Cpath d='M20 40l12-15 8 10 6-7 8 12H20z' fill='%2394a3b8'/%3E%3C/svg%3E";
+    img.alt = "";
 
-    const details = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = product.title || "Untitled product";
-    const meta = document.createElement("span");
-    meta.textContent = [product.source_site, formatPrice(product)].filter(Boolean).join(" · ") || "No source metadata";
-    const url = document.createElement("span");
-    url.textContent = product.source_url;
+    const info = document.createElement("div");
+    info.className = "product-info";
+    
+    const title = document.createElement("h3");
+    title.textContent = product.title || "Untitled Product";
+    
+    const meta = document.createElement("div");
+    meta.className = "product-meta";
+    
+    const price = document.createElement("span");
+    price.className = "product-price";
+    price.textContent = formatPrice(product);
+    
+    const site = document.createElement("span");
+    site.textContent = product.source_site || "External Source";
 
-    details.append(title, meta, url);
-    card.append(image, details);
+    meta.append(price, site);
+    info.append(title, meta);
+    card.append(img, info);
     elements.previewList.append(card);
-  }
+  });
 }
 
 function renderMessages() {
-  elements.messageList.replaceChildren();
+  elements.messageList.innerHTML = "";
   const messages = [...state.failures, ...state.warnings];
 
   if (!messages.length) {
     const item = document.createElement("li");
-    item.textContent = "No warnings.";
+    item.textContent = "No engine warnings.";
     elements.messageList.append(item);
     return;
   }
 
-  for (const message of messages.slice(-30)) {
+  messages.slice(-20).forEach(msg => {
     const item = document.createElement("li");
-    item.textContent = message;
+    item.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
     elements.messageList.append(item);
-  }
+  });
 }
 
 function dedupeProducts(products) {
   const seen = new Set();
-
-  return products.filter((product) => {
-    const key = product.source_url || `${product.title}|${product.price}`;
-
-    if (seen.has(key)) {
-      return false;
-    }
-
+  return products.filter((p) => {
+    const key = p.source_url || `${p.title}|${p.price}`;
+    if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
 function formatPrice(product) {
-  if (!product.price) {
-    return "";
-  }
-
-  return `${product.currency ? `${product.currency} ` : ""}${product.price}`;
+  if (!product.price) return "Price N/A";
+  const curr = product.currency ? product.currency + " " : "";
+  return `${curr}${product.price}`;
 }

@@ -1,300 +1,180 @@
 export function scrapeProductFromPage() {
-// Helpers are intentionally nested so chrome.scripting.executeScript can inject
-// this function as a self-contained page scraper.
-function findJsonLdProducts() {
-  const scripts = [...document.querySelectorAll('script[type="application/ld+json"]')];
+  // Helpers are intentionally nested so chrome.scripting.executeScript can inject
+  // this function as a self-contained page scraper.
 
-  return scripts
-    .flatMap((script) => parseJsonLd(script.textContent || ""))
-    .flatMap(expandJsonLdNode)
-    .filter(isProductLike)
-    .map(normalizeJsonLdProduct);
-}
-
-function parseJsonLd(rawJson) {
-  const trimmed = rawJson.trim();
-
-  if (!trimmed) {
-    return [];
+  function findJsonLdProducts() {
+    const scripts = [...document.querySelectorAll('script[type="application/ld+json"]')];
+    return scripts
+      .flatMap((script) => parseJsonLd(script.textContent || ""))
+      .flatMap(expandJsonLdNode)
+      .filter(isProductLike)
+      .map(normalizeJsonLdProduct);
   }
 
-  try {
-    return [JSON.parse(trimmed)];
-  } catch (_error) {
-    return [];
-  }
-}
-
-function expandJsonLdNode(node) {
-  if (!node) {
-    return [];
-  }
-
-  if (Array.isArray(node)) {
-    return node.flatMap(expandJsonLdNode);
-  }
-
-  if (typeof node !== "object") {
-    return [];
-  }
-
-  const graph = Array.isArray(node["@graph"]) ? node["@graph"].flatMap(expandJsonLdNode) : [];
-  const hasOffers = node.offers ? expandJsonLdNode(node.offers) : [];
-  const variants = node.hasVariant ? expandJsonLdNode(node.hasVariant) : [];
-
-  return [node, ...graph, ...hasOffers, ...variants];
-}
-
-function isProductLike(node) {
-  const type = normalizeType(node["@type"]);
-  return type.includes("product") || Boolean(node.offers && (node.name || node.image));
-}
-
-function normalizeJsonLdProduct(product) {
-  const offer = firstObject(product.offers);
-  const aggregateRating = firstObject(product.aggregateRating);
-  const brand = firstObject(product.brand);
-  const imageValues = normalizeArray(product.image).map((image) => {
-    if (typeof image === "string") {
-      return image;
+  function parseJsonLd(rawJson) {
+    const trimmed = rawJson.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch (_error) {
+      return [];
     }
+  }
 
-    return image?.url || image?.contentUrl || "";
-  });
+  function expandJsonLdNode(node) {
+    if (!node || typeof node !== "object") return [];
+    if (Array.isArray(node)) return node.flatMap(expandJsonLdNode);
 
-  return {
-    title: product.name || "",
-    description: product.description || "",
-    price: offer.price || offer.lowPrice || offer.highPrice || product.price || "",
-    currency: offer.priceCurrency || product.priceCurrency || "",
-    availability: offer.availability || product.availability || "",
-    brand: brand.name || product.brand || "",
-    vendor: firstObject(offer.seller).name || firstObject(product.seller).name || "",
-    sku: product.sku || product.mpn || product.gtin || product.gtin13 || product.gtin14 || "",
-    category: product.category || "",
-    image_url: imageValues[0] || "",
-    additional_image_urls: imageValues.slice(1),
-    rating: aggregateRating.ratingValue || "",
-    review_count: aggregateRating.reviewCount || aggregateRating.ratingCount || ""
-  };
-}
+    const nodes = [node];
+    if (Array.isArray(node["@graph"])) nodes.push(...node["@graph"].flatMap(expandJsonLdNode));
+    if (node.offers) nodes.push(...normalizeArray(node.offers).flatMap(expandJsonLdNode));
+    if (node.hasVariant) nodes.push(...normalizeArray(node.hasVariant).flatMap(expandJsonLdNode));
+    if (node.mainEntity) nodes.push(...expandJsonLdNode(node.mainEntity));
 
-function scrapeMetaProduct() {
-  const meta = (selector) => document.querySelector(selector)?.getAttribute("content")?.trim() || "";
-  const keywords = meta('meta[name="keywords"]');
-  const price =
-    meta('meta[property="product:price:amount"]') ||
-    meta('meta[property="og:price:amount"]') ||
-    meta('meta[name="twitter:data1"]');
+    return nodes;
+  }
 
-  return {
-    title: meta('meta[property="og:title"]') || meta('meta[name="twitter:title"]') || document.title || "",
-    description:
-      meta('meta[property="og:description"]') ||
-      meta('meta[name="twitter:description"]') ||
-      meta('meta[name="description"]') ||
-      "",
-    price,
-    currency: meta('meta[property="product:price:currency"]') || meta('meta[property="og:price:currency"]') || "",
-    availability: meta('meta[property="product:availability"]') || "",
-    brand: meta('meta[property="product:brand"]') || "",
-    category: meta('meta[property="product:category"]') || "",
-    tags: keywords,
-    image_url: meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || ""
-  };
-}
+  function isProductLike(node) {
+    const type = normalizeType(node["@type"]);
+    return type.includes("product") || Boolean(node.offers && (node.name || node.image));
+  }
 
-function scrapeDomProduct() {
-  const title = textFromSelectors([
-    "#productTitle",
-    '[data-testid="product-title"]',
-    '[data-test-id="product-title"]',
-    '[itemprop="name"]',
-    "h1"
-  ]);
-  const description = textFromSelectors([
-    "#productDescription",
-    "#feature-bullets",
-    '[data-testid="product-description"]',
-    '[data-test-id="product-description"]',
-    '[itemprop="description"]',
-    ".product-description",
-    ".description"
-  ]);
-  const price = textFromSelectors([
-    ".a-price .a-offscreen",
-    "#priceblock_ourprice",
-    "#priceblock_dealprice",
-    '[data-testid="price-wrap"]',
-    '[data-automation-id="product-price"]',
-    '[itemprop="price"]',
-    ".price",
-    ".product-price",
-    "[class*=price]"
-  ]);
-  const availability = textFromSelectors([
-    "#availability",
-    '[data-testid="availability"]',
-    '[data-automation-id="fulfillment-shipping-text"]',
-    ".availability",
-    "[class*=availability]"
-  ]);
-  const brand = textFromSelectors([
-    "#bylineInfo",
-    '[data-testid="brand-name"]',
-    '[itemprop="brand"]',
-    ".brand",
-    "[class*=brand]"
-  ]);
-  const imageUrls = uniqueValues([
-    ...attributeValues([
-      "#landingImage",
-      "#imgTagWrapperId img",
-      '[data-testid="hero-image"] img',
-      '[data-testid="product-image"] img',
-      '[data-automation-id="product-image"] img',
-      '[itemprop="image"]',
-      ".product-image img",
-      ".carousel img",
-      "main img"
-    ], "src"),
-    ...attributeValues([
-      "#landingImage",
-      "#imgTagWrapperId img",
-      '[data-testid="hero-image"] img',
-      '[data-testid="product-image"] img',
-      '[data-automation-id="product-image"] img',
-      ".product-image img",
-      ".carousel img",
-      "main img"
-    ], "data-old-hires"),
-    ...srcsetValues()
-  ]).filter(isLikelyImageUrl);
+  function normalizeJsonLdProduct(product) {
+    const offers = normalizeArray(product.offers);
+    const primaryOffer = firstObject(offers);
+    const aggregateRating = firstObject(product.aggregateRating);
+    const brand = firstObject(product.brand);
+    const imageValues = normalizeArray(product.image).map((image) => {
+      if (typeof image === "string") return image;
+      return image?.url || image?.contentUrl || "";
+    });
 
-  return {
-    title,
-    description,
-    price,
-    availability,
-    brand,
-    vendor: brand,
-    image_url: imageUrls[0] || "",
-    additional_image_urls: imageUrls.slice(1, 8),
-    rating: textFromSelectors([
-      '[data-testid="rating"]',
-      '[itemprop="ratingValue"]',
-      ".review-rating",
-      "[class*=rating]"
-    ]),
-    review_count: textFromSelectors([
-      "#acrCustomerReviewText",
-      '[data-testid="reviews-count"]',
-      '[itemprop="reviewCount"]',
-      "[class*=review]"
-    ])
-  };
-}
+    return {
+      title: product.name || "",
+      description: product.description || "",
+      price: primaryOffer.price || primaryOffer.lowPrice || product.price || "",
+      currency: primaryOffer.priceCurrency || product.priceCurrency || "",
+      availability: primaryOffer.availability || product.availability || "",
+      brand: brand.name || product.brand || "",
+      vendor: firstObject(primaryOffer.seller).name || product.vendor || "",
+      sku: product.sku || product.mpn || product.gtin || "",
+      category: product.category || "",
+      image_url: imageValues[0] || "",
+      additional_image_urls: imageValues.slice(1),
+      rating: aggregateRating.ratingValue || "",
+      review_count: aggregateRating.reviewCount || aggregateRating.ratingCount || "",
+      variant_name: product.variantName || "",
+      variant_value: product.variantValue || ""
+    };
+  }
 
-function mergeProductData(...products) {
-  const merged = {};
+  function findMicrodataProducts() {
+    const productElements = [...document.querySelectorAll('[itemscope][itemtype*="Product"]')];
+    if (productElements.length === 0) return [];
 
-  for (const product of products.reverse()) {
-    for (const [key, value] of Object.entries(product || {})) {
-      if (hasMeaningfulValue(value)) {
-        merged[key] = value;
+    return productElements.map((el) => {
+      const getProp = (prop) => el.querySelector(`[itemprop="${prop}"]`)?.getAttribute("content") || el.querySelector(`[itemprop="${prop}"]`)?.textContent?.trim() || "";
+      const getImg = (prop) => el.querySelector(`[itemprop="${prop}"]`)?.getAttribute("src") || "";
+
+      return {
+        title: getProp("name"),
+        description: getProp("description"),
+        price: getProp("price"),
+        currency: getProp("priceCurrency"),
+        availability: getProp("availability"),
+        brand: getProp("brand"),
+        sku: getProp("sku") || getProp("mpn"),
+        image_url: getImg("image"),
+        rating: el.querySelector('[itemscope][itemtype*="AggregateRating"] [itemprop="ratingValue"]')?.textContent?.trim() || ""
+      };
+    });
+  }
+
+  function scrapeMetaProduct() {
+    const meta = (selector) => document.querySelector(selector)?.getAttribute("content")?.trim() || "";
+    return {
+      title: meta('meta[property="og:title"]') || meta('meta[name="twitter:title"]') || document.title || "",
+      description: meta('meta[property="og:description"]') || meta('meta[name="description"]') || "",
+      price: meta('meta[property="product:price:amount"]') || meta('meta[property="og:price:amount"]') || "",
+      currency: meta('meta[property="product:price:currency"]') || meta('meta[property="og:price:currency"]') || "",
+      availability: meta('meta[property="product:availability"]') || "",
+      brand: meta('meta[property="product:brand"]') || meta('meta[name="brand"]') || "",
+      image_url: meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || ""
+    };
+  }
+
+  function scrapeDomProduct() {
+    const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", "[data-testid=\"product-title\"]"]);
+    const price = textFromSelectors([".a-price .a-offscreen", ".price", "[data-testid=\"price\"]", ".product-price"]);
+    const image_url = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"product-image\"]"], "src")[0] || "";
+
+    return { title, price, image_url };
+  }
+
+  function mergeProductData(...products) {
+    const merged = {};
+    for (const product of products.reverse()) {
+      for (const [key, value] of Object.entries(product || {})) {
+        if (hasMeaningfulValue(value)) merged[key] = value;
       }
     }
+    return merged;
   }
 
-  return merged;
-}
-
-function hasMeaningfulValue(value) {
-  if (Array.isArray(value)) {
-    return value.length > 0;
+  function hasMeaningfulValue(value) {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== null && value !== undefined && String(value).trim() !== "";
   }
 
-  return value !== null && value !== undefined && String(value).trim() !== "";
-}
-
-function normalizeType(type) {
-  return normalizeArray(type).join(" ").toLowerCase();
-}
-
-function normalizeArray(value) {
-  if (!value) {
-    return [];
+  function normalizeType(type) {
+    return normalizeArray(type).join(" ").toLowerCase();
   }
 
-  return Array.isArray(value) ? value : [value];
-}
-
-function firstObject(value) {
-  const item = normalizeArray(value)[0];
-
-  if (item && typeof item === "object") {
-    return item;
+  function normalizeArray(value) {
+    if (!value) return [];
+    return Array.isArray(value) ? value : [value];
   }
 
-  return {};
-}
+  function firstObject(value) {
+    const item = normalizeArray(value)[0];
+    return (item && typeof item === "object") ? item : {};
+  }
 
-function textFromSelectors(selectors) {
-  for (const selector of selectors) {
-    const element = document.querySelector(selector);
-    const text = element?.getAttribute?.("content") || element?.textContent || element?.getAttribute?.("aria-label") || "";
-    const cleaned = text.replace(/\s+/g, " ").trim();
-
-    if (cleaned) {
-      return cleaned;
+  function textFromSelectors(selectors) {
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      const text = el?.getAttribute("content") || el?.textContent || "";
+      if (text.trim()) return text.trim();
     }
-  }
-
-  return "";
-}
-
-function attributeValues(selectors, attributeName) {
-  return selectors.flatMap((selector) =>
-    [...document.querySelectorAll(selector)]
-      .map((element) => element.getAttribute(attributeName))
-      .filter(Boolean)
-  );
-}
-
-function srcsetValues() {
-  return [...document.querySelectorAll("img[srcset]")]
-    .flatMap((image) => image.getAttribute("srcset").split(","))
-    .map((candidate) => candidate.trim().split(/\s+/)[0])
-    .filter(Boolean);
-}
-
-function uniqueValues(values) {
-  return [...new Set(values.map((value) => absoluteUrl(value)).filter(Boolean))];
-}
-
-function absoluteUrl(value) {
-  try {
-    return new URL(value, window.location.href).href;
-  } catch (_error) {
     return "";
   }
-}
 
-function isLikelyImageUrl(value) {
-  return /^https?:\/\//i.test(value) && !/sprite|logo|icon|avatar|placeholder/i.test(value);
-}
+  function attributeValues(selectors, attr) {
+    return selectors.flatMap(s => [...document.querySelectorAll(s)].map(el => el.getAttribute(attr)).filter(Boolean));
+  }
 
   const pageUrl = window.location.href;
-  const jsonLdProducts = findJsonLdProducts();
-  const primaryJsonLdProduct = jsonLdProducts[0] || {};
-  const metaProduct = scrapeMetaProduct();
-  const domProduct = scrapeDomProduct();
-  const mergedProduct = mergeProductData(primaryJsonLdProduct, metaProduct, domProduct);
+  const pageTitle = document.title || "";
+  const timestamp = new Date().toISOString();
 
-  return {
-    ...mergedProduct,
+  // Strategy: Try to find multiple products first (Lists/Collections)
+  let products = findJsonLdProducts();
+  if (products.length === 0) products = findMicrodataProducts();
+
+  // If no structured products found, fallback to meta/dom for a single item
+  if (products.length === 0) {
+    const meta = scrapeMetaProduct();
+    const dom = scrapeDomProduct();
+    const merged = mergeProductData(meta, dom);
+    if (merged.title || merged.price) products = [merged];
+  }
+
+  return products.map(p => ({
+    ...p,
     source_url: pageUrl,
-    source_tab_title: document.title || "",
-    scraped_at: new Date().toISOString()
-  };
+    source_tab_title: pageTitle,
+    source_site: window.location.hostname,
+    scraped_at: timestamp
+  }));
 }
