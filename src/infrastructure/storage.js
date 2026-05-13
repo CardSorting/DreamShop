@@ -3,9 +3,12 @@
  */
 
 const STORAGE_KEYS = {
-  PRODUCTS: "ds_products",
+  META: "ds_products_meta",
+  BUCKET_PREFIX: "ds_products_b_",
   LOGS: "ds_logs"
 };
+
+const BUCKET_SIZE = 500;
 
 /**
  * Sequential task queue to ensure atomic storage operations.
@@ -21,18 +24,69 @@ async function enqueueStorageTask(task) {
 
 export async function getStoredProducts() {
   try {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.PRODUCTS);
-    return result[STORAGE_KEYS.PRODUCTS] || [];
+    const meta = await chrome.storage.local.get(STORAGE_KEYS.META);
+    const { count = 0, bucketCount = 0 } = meta[STORAGE_KEYS.META] || {};
+    
+    if (count === 0) return [];
+
+    // Forensic Reassembly: Load all buckets and flatten
+    const bucketKeys = Array.from({ length: bucketCount }, (_, i) => `${STORAGE_KEYS.BUCKET_PREFIX}${i}`);
+    const results = await chrome.storage.local.get(bucketKeys);
+    
+    const products = [];
+    for (let i = 0; i < bucketCount; i++) {
+      const bucket = results[`${STORAGE_KEYS.BUCKET_PREFIX}${i}`] || [];
+      products.push(...bucket);
+    }
+    return products;
   } catch (error) {
     console.error("Storage read failed:", error);
     return [];
   }
 }
 
+/**
+ * Memory-Safe Generator for large datasets.
+ * Yields products bucket-by-bucket to prevent heap exhaustion.
+ */
+export async function* getStoredProductsStream() {
+  const meta = await chrome.storage.local.get(STORAGE_KEYS.META);
+  const { bucketCount = 0 } = meta[STORAGE_KEYS.META] || {};
+  
+  for (let i = 0; i < bucketCount; i++) {
+    const key = `${STORAGE_KEYS.BUCKET_PREFIX}${i}`;
+    const result = await chrome.storage.local.get(key);
+    yield result[key] || [];
+  }
+}
+
 export async function saveProducts(products) {
   try {
-    await chrome.storage.local.set({ [STORAGE_KEYS.PRODUCTS]: products });
-    updateBadge(products.length);
+    const deduped = dedupe(products);
+    const bucketCount = Math.ceil(deduped.length / BUCKET_SIZE);
+    
+    // Clear old buckets first to prevent orphaned data
+    const oldMeta = await chrome.storage.local.get(STORAGE_KEYS.META);
+    const oldBucketCount = oldMeta[STORAGE_KEYS.META]?.bucketCount || 0;
+    if (oldBucketCount > bucketCount) {
+      const keysToRemove = Array.from({ length: oldBucketCount - bucketCount }, (_, i) => `${STORAGE_KEYS.BUCKET_PREFIX}${bucketCount + i}`);
+      await chrome.storage.local.remove(keysToRemove);
+    }
+
+    const storageObject = {
+      [STORAGE_KEYS.META]: {
+        count: deduped.length,
+        bucketCount,
+        lastUpdated: new Date().toISOString()
+      }
+    };
+
+    for (let i = 0; i < bucketCount; i++) {
+      storageObject[`${STORAGE_KEYS.BUCKET_PREFIX}${i}`] = deduped.slice(i * BUCKET_SIZE, (i + 1) * BUCKET_SIZE);
+    }
+
+    await chrome.storage.local.set(storageObject);
+    updateBadge(deduped.length);
   } catch (error) {
     console.error("Storage write failed:", error);
     throw new Error("Unable to save inventory. Storage might be full or restricted.");
@@ -42,9 +96,8 @@ export async function saveProducts(products) {
 export async function addProducts(newProducts) {
   return enqueueStorageTask(async () => {
     const current = await getStoredProducts();
-    const deduped = dedupe([...current, ...newProducts]);
-    await saveProducts(deduped);
-    return deduped;
+    await saveProducts([...current, ...newProducts]);
+    return getStoredProducts(); // Return fresh state
   });
 }
 

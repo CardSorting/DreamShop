@@ -244,7 +244,8 @@ async function downloadCsv() {
   if (!state.products.length) return;
   setBusy(true, "Compiling export...");
   try {
-    await downloadGenericProductCsv(state.products);
+    // Trigger memory-safe streaming export directly from storage buckets
+    await downloadGenericProductCsv();
     elements.statusText.textContent = "Export dispatched.";
     await addLog("CSV export initiated.");
     state.logs = await getStoredLogs();
