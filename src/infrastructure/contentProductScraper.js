@@ -41,34 +41,41 @@ export function scrapeProductFromPage(targetSelector = null) {
     return type.includes("product") || Boolean(node.offers && (node.name || node.image));
   }
 
-  function normalizeJsonLdProduct(product) {
-    const offers = normalizeArray(product.offers);
+  function normalizeJsonLdProduct(data) {
+    const offers = normalizeArray(data.offers);
     const primaryOffer = firstObject(offers);
-    const aggregateRating = firstObject(product.aggregateRating);
-    const brand = firstObject(product.brand);
-    const imageValues = normalizeArray(product.image).map((image) => {
+    const aggregateRating = firstObject(data.aggregateRating);
+    const brand = firstObject(data.brand);
+    const imageValues = normalizeArray(data.image).map((image) => {
       if (typeof image === "string") return image;
       return image?.url || image?.contentUrl || "";
     });
 
+    const shipping = firstObject(primaryOffer.shippingDetails)?.shippingRate?.value || "";
+    const returnPolicy = firstObject(data.hasMerchantReturnPolicy)?.merchantReturnDays || "";
+
     return {
-      title: product.name || "",
-      description: product.description || "",
-      price: primaryOffer.price || primaryOffer.lowPrice || product.price || "",
-      currency: primaryOffer.priceCurrency || product.priceCurrency || "",
-      availability: primaryOffer.availability || product.availability || "",
-      brand: brand.name || product.brand || "",
-      vendor: firstObject(primaryOffer.seller).name || product.vendor || "",
-      sku: product.sku || product.mpn || product.gtin || "",
-      category: product.category || "",
+      title: data.name || "",
+      description: data.description || "",
+      price: primaryOffer.price || primaryOffer.lowPrice || data.price || "",
+      currency: primaryOffer.priceCurrency || data.priceCurrency || "",
+      compare_at_price: data.listPrice || "",
+      shipping_price: shipping,
+      return_policy: returnPolicy ? `${returnPolicy} days` : "",
+      availability: primaryOffer.availability || data.availability || "",
+      brand: brand.name || data.brand || "",
+      vendor: firstObject(primaryOffer.seller).name || data.vendor || "",
+      sku: data.sku || data.mpn || data.gtin || "",
+      category: data.category || "",
       image_url: cleanImageUrl(imageValues[0] || ""),
       additional_image_urls: imageValues.slice(1).map(cleanImageUrl),
       rating: aggregateRating.ratingValue || "",
       review_count: aggregateRating.reviewCount || aggregateRating.ratingCount || "",
-      variant_name: product.variantName || "",
-      variant_value: product.variantValue || ""
+      variant_name: data.variantName || "",
+      variant_value: data.variantValue || ""
     };
   }
+
 
   function findMicrodataProducts() {
     const productElements = querySelectorAllDeep('[itemscope][itemtype*="Product"]', root);
@@ -116,10 +123,27 @@ export function scrapeProductFromPage(targetSelector = null) {
   function scrapeDomProduct() {
     const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", "[data-testid=\"product-title\"]"]);
     const price = textFromSelectors([".a-price .a-offscreen", ".price", "[data-testid=\"price\"]", ".product-price"]);
-    const image_url = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"product-image\"]", ".main-image"], ["src", "data-src", "data-lazy-src", "srcset"])[0] || "";
+    
+    const gallery = attributeValues([
+      "#landingImage", 
+      ".product-image img", 
+      "[data-testid=\"product-image\"]", 
+      ".main-image",
+      ".gallery-item img",
+      ".product-thumbnails img",
+      ".thumb img"
+    ], ["src", "data-src", "data-lazy-src", "srcset"]);
 
-    return { title, price, image_url: cleanImageUrl(image_url) };
+    const uniqueImages = [...new Set(gallery.map(cleanImageUrl))].filter(Boolean);
+
+    return { 
+      title, 
+      price, 
+      image_url: uniqueImages[0] || "",
+      additional_image_urls: uniqueImages.slice(1)
+    };
   }
+
 
   function mergeProductData(...products) {
     const merged = {};
@@ -176,13 +200,18 @@ export function scrapeProductFromPage(targetSelector = null) {
   function cleanImageUrl(url) {
     if (!url) return "";
     try {
-      const u = new URL(url, window.location.href);
-      ["v", "width", "height", "quality"].forEach(p => u.searchParams.delete(p));
+      let clean = url;
+      // Strip common resizing suffixes for high-res versions
+      clean = clean.replace(/(_\d+x\d+|_thumb|_small|-150x150|-300x300)(\.[a-z]+)$/i, "$2");
+      
+      const u = new URL(clean, window.location.href);
+      ["v", "width", "height", "quality", "size", "resize"].forEach(p => u.searchParams.delete(p));
       return u.toString();
     } catch (_e) {
       return url;
     }
   }
+
 
   /**
    * Helper to find elements across Shadow DOM boundaries

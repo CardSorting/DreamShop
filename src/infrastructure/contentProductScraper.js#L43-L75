@@ -1,0 +1,34 @@
+  function normalizeJsonLdProduct(data) {
+    const offers = normalizeArray(data.offers);
+    const primaryOffer = firstObject(offers);
+    const aggregateRating = firstObject(data.aggregateRating);
+    const brand = firstObject(data.brand);
+    const imageValues = normalizeArray(data.image).map((image) => {
+      if (typeof image === "string") return image;
+      return image?.url || image?.contentUrl || "";
+    });
+
+    const shipping = firstObject(primaryOffer.shippingDetails)?.shippingRate?.value || "";
+    const returnPolicy = firstObject(data.hasMerchantReturnPolicy)?.merchantReturnDays || "";
+
+    return {
+      title: data.name || "",
+      description: data.description || "",
+      price: primaryOffer.price || primaryOffer.lowPrice || data.price || "",
+      currency: primaryOffer.priceCurrency || data.priceCurrency || "",
+      compare_at_price: data.listPrice || "",
+      shipping_price: shipping,
+      return_policy: returnPolicy ? `${returnPolicy} days` : "",
+      availability: primaryOffer.availability || data.availability || "",
+      brand: brand.name || data.brand || "",
+      vendor: firstObject(primaryOffer.seller).name || data.vendor || "",
+      sku: data.sku || data.mpn || data.gtin || "",
+      category: data.category || "",
+      image_url: cleanImageUrl(imageValues[0] || ""),
+      additional_image_urls: imageValues.slice(1).map(cleanImageUrl),
+      rating: aggregateRating.ratingValue || "",
+      review_count: aggregateRating.reviewCount || aggregateRating.ratingCount || "",
+      variant_name: data.variantName || "",
+      variant_value: data.variantValue || ""
+    };
+  }

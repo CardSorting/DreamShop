@@ -31,8 +31,20 @@ const elements = {
   closeLogs: document.querySelector("#closeLogs"),
   searchInput: document.querySelector("#searchInput"),
   loadMoreButton: document.querySelector("#loadMoreButton"),
-  loadMoreContainer: document.querySelector("#loadMoreContainer")
+  loadMoreContainer: document.querySelector("#loadMoreContainer"),
+  imageLightbox: document.querySelector("#imageLightbox"),
+  lightboxImg: document.querySelector("#lightboxImg"),
+  closeLightbox: document.querySelector("#closeLightbox"),
+  prevImg: document.querySelector("#prevImg"),
+  nextImg: document.querySelector("#nextImg"),
+  imgIndex: document.querySelector("#imgIndex"),
+  downloadImg: document.querySelector("#downloadImg"),
+  downloadAllImgs: document.querySelector("#downloadAllImgs")
 };
+
+let lightboxGallery = [];
+let lightboxCurrentIndex = 0;
+let lightboxProductTitle = "";
 
 // Event Listeners
 elements.tabCapture.addEventListener("click", () => switchTab("capture"));
@@ -54,11 +66,72 @@ elements.searchInput.addEventListener("keydown", (e) => {
     render();
   }
 });
-
 elements.loadMoreButton.addEventListener("click", () => {
   state.page++;
   render();
 });
+
+elements.downloadImg.addEventListener("click", () => downloadAsset(lightboxCurrentIndex));
+elements.downloadAllImgs.addEventListener("click", async () => {
+  for (let i = 0; i < lightboxGallery.length; i++) {
+    downloadAsset(i);
+    // Slight delay to be polite to the browser's download queue
+    await new Promise(r => setTimeout(r, 200));
+  }
+});
+
+function downloadAsset(index) {
+  const url = lightboxGallery[index];
+  if (!url) return;
+  
+  const ext = url.split(".").pop().split(/[?#]/)[0] || "jpg";
+  const filename = `dreamshop/${lightboxProductTitle.replace(/[^a-z0-9]/gi, "_")}_${index + 1}.${ext}`;
+  
+  chrome.downloads.download({
+    url: url,
+    filename: filename,
+    saveAs: false
+  });
+}
+
+
+
+elements.closeLightbox.addEventListener("click", () => elements.imageLightbox.classList.remove("active"));
+elements.imageLightbox.addEventListener("click", (e) => {
+  if (e.target === elements.imageLightbox) elements.imageLightbox.classList.remove("active");
+});
+
+elements.prevImg.addEventListener("click", () => {
+  lightboxCurrentIndex = (lightboxCurrentIndex - 1 + lightboxGallery.length) % lightboxGallery.length;
+  updateLightbox();
+});
+
+elements.nextImg.addEventListener("click", () => {
+  lightboxCurrentIndex = (lightboxCurrentIndex + 1) % lightboxGallery.length;
+  updateLightbox();
+});
+
+function showLightbox(product) {
+  lightboxGallery = [product.image_url, ...(product.additional_image_urls ? product.additional_image_urls.split(" | ") : [])].filter(Boolean);
+  lightboxCurrentIndex = 0;
+  lightboxProductTitle = product.title || "Product";
+  
+  if (lightboxGallery.length === 0) return;
+
+  
+  elements.imageLightbox.classList.add("active");
+  elements.prevImg.style.display = lightboxGallery.length > 1 ? "block" : "none";
+  elements.nextImg.style.display = lightboxGallery.length > 1 ? "block" : "none";
+  elements.imgIndex.style.display = lightboxGallery.length > 1 ? "block" : "none";
+  
+  updateLightbox();
+}
+
+function updateLightbox() {
+  elements.lightboxImg.src = lightboxGallery[lightboxCurrentIndex];
+  elements.imgIndex.textContent = `${lightboxCurrentIndex + 1} / ${lightboxGallery.length}`;
+}
+
 
 
 
@@ -217,10 +290,29 @@ function renderPreview() {
     const card = document.createElement("div");
     card.className = "product-card";
 
+    const imgContainer = document.createElement("div");
+    imgContainer.className = "product-img-container";
+    imgContainer.style.cursor = "pointer";
+    imgContainer.onclick = () => showLightbox(product);
+
     const img = document.createElement("img");
     img.className = "product-img";
     img.src = product.image_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23e2e8f0'/%3E%3Cpath d='M20 40l12-15 8 10 6-7 8 12H20z' fill='%2394a3b8'/%3E%3C/svg%3E";
     img.alt = product.title || "Product Image Preview";
+
+    
+    imgContainer.appendChild(img);
+
+    const galleryText = product.additional_image_urls || "";
+    const galleryCount = galleryText ? (galleryText.split(" | ").length) : 0;
+    
+    if (galleryCount > 0) {
+      const badge = document.createElement("span");
+      badge.className = "gallery-badge";
+      badge.textContent = `+${galleryCount}`;
+      imgContainer.appendChild(badge);
+    }
+
 
 
     const info = document.createElement("div");
@@ -236,10 +328,26 @@ function renderPreview() {
     price.className = "product-price";
     price.textContent = formatPrice(product);
     
+    if (product.discount_percentage) {
+      const discount = document.createElement("span");
+      discount.className = "discount-badge";
+      discount.textContent = `-${product.discount_percentage}`;
+      price.append(discount);
+    }
+    
     const site = document.createElement("span");
+    site.className = "product-site";
     site.textContent = product.source_site || "External Source";
 
-    meta.append(price, site);
+    if (product.shipping_price && product.shipping_price !== "0") {
+      const shipping = document.createElement("span");
+      shipping.className = "shipping-info";
+      shipping.textContent = `+ ${product.shipping_price} shipping`;
+      meta.append(price, shipping, site);
+    } else {
+      meta.append(price, site);
+    }
+
     info.append(title, meta);
     
     // Action Buttons for Card
@@ -281,10 +389,11 @@ function renderPreview() {
     };
     
     cardActions.append(openBtn, copyBtn, removeBtn);
-    card.append(img, info, cardActions);
+    card.append(imgContainer, info, cardActions);
     elements.previewList.append(card);
   });
 }
+
 
 
 

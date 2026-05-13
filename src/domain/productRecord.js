@@ -7,8 +7,12 @@ export const PRODUCT_CSV_COLUMNS = [
   "price",
   "currency",
   "compare_at_price",
+  "discount_percentage",
+  "shipping_price",
   "availability",
+  "return_policy",
   "brand",
+
   "vendor",
   "sku",
   "category",
@@ -67,17 +71,25 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
   const description = cleanText(rawProduct.description || "");
   const notes = buildNotes(rawProduct, fallback, title, description);
 
+  const price = normalizePrice(priceSource);
+  const comparePrice = normalizePrice(rawProduct.compare_at_price || rawProduct.listPrice || "");
+  const discount = calculateDiscount(price, comparePrice);
+
   return {
+
     ...record,
     source_site: cleanText(rawProduct.source_site || detectSourceSite(sourceUrl)),
     source_url: sourceUrl,
     source_tab_title: cleanText(rawProduct.source_tab_title || fallback.source_tab_title || fallback.title || ""),
     title,
     description,
-    price: normalizePrice(priceSource),
+    price,
     currency: normalizeCurrency(rawProduct.currency || rawProduct.priceCurrency || inferCurrencyFromText(priceSource)),
-    compare_at_price: normalizePrice(rawProduct.compare_at_price || rawProduct.listPrice || ""),
+    compare_at_price: comparePrice,
+    discount_percentage: discount,
+    shipping_price: normalizePrice(rawProduct.shipping_price || rawProduct.shippingRate || ""),
     availability: normalizeAvailability(rawProduct.availability || ""),
+    return_policy: cleanText(rawProduct.return_policy || rawProduct.hasMerchantReturnPolicy || ""),
     brand: cleanText(rawProduct.brand || ""),
     vendor: cleanText(rawProduct.vendor || rawProduct.seller || rawProduct.merchant || rawProduct.brand || ""),
     sku: cleanText(rawProduct.sku || rawProduct.mpn || rawProduct.gtin || ""),
@@ -94,6 +106,15 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
     scraped_at: cleanText(rawProduct.scraped_at || fallback.scraped_at || "")
   };
 }
+
+function calculateDiscount(price, compare) {
+  const p = parseFloat(price);
+  const c = parseFloat(compare);
+  if (!p || !c || c <= p) return "";
+  const pct = ((c - p) / c) * 100;
+  return `${Math.round(pct)}%`;
+}
+
 
 export function validateProductRecord(record) {
   const warnings = [];

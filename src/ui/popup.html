@@ -87,6 +87,25 @@
         </div>
       </main>
 
+      <!-- Lightbox Modal -->
+      <div id="imageLightbox" class="lightbox-overlay">
+        <div class="lightbox-content">
+          <button id="closeLightbox" class="lightbox-close">×</button>
+          <img id="lightboxImg" src="" alt="Full Resolution Preview">
+          <div class="lightbox-nav">
+            <button id="prevImg" class="nav-btn">←</button>
+            <span id="imgIndex">1 / 1</span>
+            <button id="nextImg" class="nav-btn">→</button>
+            <div class="nav-actions">
+              <button id="downloadImg" class="nav-btn primary">Download Current</button>
+              <button id="downloadAllImgs" class="nav-btn">Download All Assets</button>
+            </div>
+          </div>
+
+
+        </div>
+      </div>
+
       <footer class="app-footer">
         <div id="statusIndicator" class="status-pill">
           <span class="pulse"></span>
