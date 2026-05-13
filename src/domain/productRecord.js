@@ -100,7 +100,7 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
   const additionalImages = images.filter((imageUrl) => imageUrl && imageUrl !== primaryImage);
   const priceSource = rawProduct.price || rawProduct.lowPrice || rawProduct.highPrice || "";
   const title = cleanText(rawProduct.title || fallback.title || "");
-  const description = cleanText(rawProduct.description || "");
+  const description = rawProduct.description || ""; // Keep HTML if present
   const notes = buildNotes(rawProduct, fallback, title, description);
 
   const price = normalizePrice(priceSource);
@@ -116,7 +116,7 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
   record.source_url = sourceUrl;
   record.source_tab_title = cleanText(rawProduct.source_tab_title || fallback.source_tab_title || fallback.title || "");
   record.title = title;
-  record.description = description;
+  record.description = cleanText(description); // Plain text for UI
   record.price = price;
   record.currency = normalizeCurrency(rawProduct.currency || rawProduct.priceCurrency || inferCurrencyFromText(priceSource));
   record.compare_at_price = comparePrice;
@@ -131,28 +131,33 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
   record.additional_image_urls = additionalImages.join(" | ");
   record.scraped_at = cleanText(rawProduct.scraped_at || fallback.scraped_at || new Date().toISOString());
 
+  // Variant Mapping
+  const options = rawProduct.variant_options || [];
+  const opt1 = options[0] || { name: record.variant_name || "Title", value: record.variant_value || "Default Title" };
+  const opt2 = options[1] || { name: "", value: "" };
+
   // Populate Shopify CSV fields
   record["Handle"] = generateHandle(title);
   record["Title"] = title;
-  record["Body (HTML)"] = description ? `<p>${description}</p>` : "";
+  record["Body (HTML)"] = description.includes("<") ? description : `<p>${description}</p>`;
   record["Vendor"] = vendor;
   record["Standardized Product Type"] = category;
   record["Custom Product Type"] = category;
   record["Tags"] = tags;
   record["Published"] = "true";
-  record["Option1 Name"] = record.variant_name || "Title";
-  record["Option1 Value"] = record.variant_value || "Default Title";
-  record["Option2 Name"] = "";
-  record["Option2 Value"] = "";
+  record["Option1 Name"] = opt1.name;
+  record["Option1 Value"] = opt1.value;
+  record["Option2 Name"] = opt2.name;
+  record["Option2 Value"] = opt2.value;
   record["Variant SKU"] = sku;
-  record["Variant Grams"] = "0";
+  record["Variant Grams"] = rawProduct.variant_grams || "0";
   record["Variant Inventory Tracker"] = "shopify";
   record["Variant Inventory Qty"] = "100";
   record["Variant Inventory Policy"] = "deny";
   record["Variant Fulfillment Service"] = "manual";
   record["Variant Price"] = price;
   record["Variant Compare At Price"] = comparePrice;
-  record["Variant Requires Shipping"] = "true";
+  record["Variant Requires Shipping"] = inferShippingRequirement(title, category);
   record["Variant Taxable"] = "true";
   record["Variant Barcode"] = "";
   record["Image Src"] = primaryImage;
@@ -160,10 +165,17 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
   record["Image Alt Text"] = title;
   record["Gift Card"] = "false";
   record["SEO Title"] = title;
-  record["SEO Description"] = description;
+  record["SEO Description"] = cleanText(description).slice(0, 160);
 
   return record;
 }
+
+function inferShippingRequirement(title, category) {
+  const digitalKeywords = ["digital", "download", "pdf", "software", "e-book", "printable", "procreate", "brushes"];
+  const text = (title + " " + category).toLowerCase();
+  return digitalKeywords.some(kw => text.includes(kw)) ? "false" : "true";
+}
+
 
 
 function calculateDiscount(price, compare) {
