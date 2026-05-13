@@ -3,12 +3,52 @@ export function scrapeProductFromPage(targetSelector = null) {
   // this function as a self-contained page scraper.
   const root = targetSelector ? (document.querySelector(targetSelector) || document) : document;
 
+  /**
+   * THE EXPERT SYSTEM V2: Site-specific extraction logic
+   */
+  const EXPERT_HANDLERS = {
+    shopify: () => {
+      const shopifyData = findStateInScripts("Shopify");
+      if (shopifyData) return { ...shopifyData, extraction_method: "Expert-Shopify" };
+      const getMeta = (n) => document.querySelector(`meta[name="${n}"], meta[property="${n}"]`)?.getAttribute("content");
+      if (getMeta("shopify-product-id")) {
+         return {
+           vendor: getMeta("shopify-seller-name") || getMeta("og:site_name"),
+           category: getMeta("product:category") || getMeta("product_type"),
+           extraction_method: "Expert-Shopify-Meta"
+         };
+      }
+      return null;
+    },
+    amazon: () => {
+      const title = textFromSelectors(["#productTitle", "#title"]);
+      const price = textFromSelectors([".a-price .a-offscreen", "#priceblock_ourprice", "#priceblock_dealprice", ".a-color-price"]);
+      const brand = textFromSelectors(["#bylineInfo", "#brand", ".po-brand"]);
+      const sku = textFromSelectors(["#ASIN", ".prodDetSectionEntry"]);
+      const images = attributeValues(["#landingImage", "#main-image-container img", ".a-dynamic-image"], ["src", "data-old-hires", "data-a-dynamic-image"]);
+      return { title, price, brand, sku, image_url: cleanImageUrl(images[0]), extraction_method: "Expert-Amazon" };
+    },
+    walmart: () => {
+      const title = textFromSelectors(["h1[itemprop=\"name\"]", "h1.f3", ".product-title"]);
+      const price = textFromSelectors(["[data-testid=\"item-price\"]", ".price-characteristic", ".f2"]);
+      const brand = textFromSelectors([".brand-name", "a[itemprop=\"brand\"]"]);
+      const images = attributeValues(["[data-testid=\"main-image\"] img", ".db_main-image", ".prod-HeroImage", ".bh-main-image"], ["src", "srcset", "data-src"]);
+      const nextData = findNextDataProducts();
+      return mergeProductData({ title, price, brand, image_url: cleanImageUrl(images[0]), extraction_method: "Expert-Walmart" }, firstObject(nextData));
+    }
+  };
+
   function findJsonLdProducts() {
     const scripts = [...document.querySelectorAll('script[type="application/ld+json"]')];
     return scripts
-      .flatMap((script) => parseJsonLd(script.textContent || ""))
+      .flatMap((s) => {
+        try {
+          const parsed = JSON.parse(s.textContent || "");
+          return Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { return []; }
+      })
       .flatMap(expandJsonLdNode)
-      .filter(isProductLike)
+      .filter(n => normalizeType(n["@type"]).includes("product") || n.offers)
       .map(p => ({ ...normalizeJsonLdProduct(p), extraction_method: "JSON-LD" }));
   }
 
@@ -23,18 +63,18 @@ export function scrapeProductFromPage(targetSelector = null) {
     return [];
   }
 
-  function findStateInScripts() {
+  function findStateInScripts(targetName = null) {
     const scripts = [...document.querySelectorAll("script:not([src])")];
     const patterns = [
       { name: "Shopify", regex: /Shopify\.product\s*=\s*({.*?});/s },
       { name: "NextData", regex: /__NEXT_DATA__\s*=\s*({.*?});/s },
-      { name: "PreloadedState", regex: /window\.__PRELOADED_STATE__\s*=\s*({.*?});/s },
-      { name: "Meteor", regex: /Meteor\.settings\s*=\s*({.*?});/s }
+      { name: "PreloadedState", regex: /window\.__PRELOADED_STATE__\s*=\s*({.*?});/s }
     ];
 
     for (const script of scripts) {
       const content = script.textContent;
       for (const pattern of patterns) {
+        if (targetName && pattern.name !== targetName) continue;
         const match = content.match(pattern.regex);
         if (match) {
           try {
@@ -53,30 +93,17 @@ export function scrapeProductFromPage(targetSelector = null) {
     if ((obj.title || obj.name) && (obj.price || obj.offers)) return obj;
     if (obj.product) return obj.product;
     if (obj.props?.pageProps?.product) return obj.props.pageProps.product;
-    if (obj.props?.initialProps?.pageProps?.product) return obj.props.initialProps.pageProps.product;
+    if (obj.props?.initialData?.product) return obj.props.initialData.product;
     
-    // Recursive search for keys like 'product' or 'item' (depth limited)
-    const queue = [{ node: obj, depth: 0 }];
-    while (queue.length > 0) {
-      const { node, depth } = queue.shift();
-      if (depth > 5) continue;
-      for (const key in node) {
-        if (["product", "item", "pdp", "entry"].includes(key.toLowerCase())) {
-          if (node[key] && typeof node[key] === "object") return node[key];
-        }
-        if (node[key] && typeof node[key] === "object") queue.push({ node: node[key], depth: depth + 1 });
+    // Breadth-First search for common product keys
+    const keys = ["product", "item", "pdp", "initialData", "entry"];
+    for (const key of keys) {
+      if (obj[key] && typeof obj[key] === "object") {
+        const nested = locateProductInObject(obj[key]);
+        if (nested) return nested;
       }
     }
     return null;
-  }
-
-  function parseJsonLd(rawJson) {
-    const trimmed = rawJson.trim();
-    if (!trimmed) return [];
-    try {
-      const parsed = JSON.parse(trimmed);
-      return Array.isArray(parsed) ? parsed : [parsed];
-    } catch (_error) { return []; }
   }
 
   function expandJsonLdNode(node) {
@@ -86,24 +113,14 @@ export function scrapeProductFromPage(targetSelector = null) {
     if (Array.isArray(node["@graph"])) nodes.push(...node["@graph"].flatMap(expandJsonLdNode));
     if (node.offers) nodes.push(...normalizeArray(node.offers).flatMap(expandJsonLdNode));
     if (node.hasVariant) nodes.push(...normalizeArray(node.hasVariant).flatMap(expandJsonLdNode));
-    if (node.mainEntity) nodes.push(...expandJsonLdNode(node.mainEntity));
     return nodes;
-  }
-
-  function isProductLike(node) {
-    const type = normalizeType(node["@type"]);
-    return type.includes("product") || Boolean(node.offers && (node.name || node.image));
   }
 
   function normalizeJsonLdProduct(data) {
     const offers = normalizeArray(data.offers);
     const primaryOffer = firstObject(offers);
-    const aggregateRating = firstObject(data.aggregateRating);
     const brand = firstObject(data.brand);
-    const imageValues = normalizeArray(data.image).map((image) => {
-      if (typeof image === "string") return image;
-      return image?.url || image?.contentUrl || "";
-    });
+    const imageValues = normalizeArray(data.image).map((img) => (typeof img === "string" ? img : img?.url || img?.contentUrl || ""));
 
     return {
       title: data.name || data.title || "",
@@ -111,7 +128,6 @@ export function scrapeProductFromPage(targetSelector = null) {
       price: primaryOffer.price || primaryOffer.lowPrice || data.price || "",
       currency: primaryOffer.priceCurrency || data.priceCurrency || "",
       compare_at_price: data.listPrice || data.compare_at_price || "",
-      shipping_price: firstObject(primaryOffer.shippingDetails)?.shippingRate?.value || "",
       availability: primaryOffer.availability || data.availability || "",
       brand: brand.name || data.brand || "",
       vendor: firstObject(primaryOffer.seller).name || data.vendor || "",
@@ -119,217 +135,128 @@ export function scrapeProductFromPage(targetSelector = null) {
       category: data.category || "",
       image_url: cleanImageUrl(imageValues[0] || ""),
       additional_image_urls: imageValues.slice(1).map(cleanImageUrl),
-      rating: aggregateRating.ratingValue || "",
-      review_count: aggregateRating.reviewCount || "",
-      variant_name: data.variantName || "",
-      variant_value: data.variantValue || ""
-    };
-  }
-
-  function findMicrodataProducts() {
-    const productElements = querySelectorAllDeep('[itemscope][itemtype*="Product"]', root);
-    return productElements.map((el) => {
-      const getProp = (p) => el.querySelector(`[itemprop="${p}"]`)?.getAttribute("content") || el.querySelector(`[itemprop="${p}"]`)?.textContent?.trim() || "";
-      const getImg = (p) => el.querySelector(`[itemprop="${p}"]`)?.getAttribute("src") || el.querySelector(`[itemprop="${p}"]`)?.getAttribute("data-src") || "";
-      return {
-        title: getProp("name"),
-        description: getProp("description"),
-        price: getProp("price"),
-        currency: getProp("priceCurrency"),
-        availability: getProp("availability"),
-        brand: getProp("brand"),
-        sku: getProp("sku") || getProp("mpn"),
-        image_url: cleanImageUrl(getImg("image")),
-        category: getProp("category"),
-        extraction_method: "Microdata"
-      };
-    });
-  }
-
-  function scrapeMetaProduct() {
-    const meta = (s) => document.querySelector(s)?.getAttribute("content")?.trim() || "";
-    return {
-      title: meta('meta[property="og:title"]') || meta('meta[name="twitter:title"]') || document.title || "",
-      description: meta('meta[property="og:description"]') || meta('meta[name="description"]') || "",
-      price: meta('meta[property="product:price:amount"]') || meta('meta[property="og:price:amount"]') || "",
-      currency: meta('meta[property="product:price:currency"]') || meta('meta[property="og:price:currency"]') || "",
-      image_url: cleanImageUrl(meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || "")
+      variant_options: data.variant_options || []
     };
   }
 
   function scrapeFullDescription() {
-    const selectors = ["#productDescription", "#description", ".product-description", "[data-testid=\"description\"]", ".description", "#feature-bullets", ".product-details", ".post-content", "#tab-description", ".pdp-about-item", ".product-info-main"];
+    const selectors = ["#productDescription", "#description", ".product-description", ".description", ".product-info-main", ".pdp-about-item", "#tab-description", ".product-details__description"];
     let html = "";
-    for (const selector of selectors) {
-      const el = querySelectorDeep(selector, root);
+    selectors.forEach(s => {
+      const el = querySelectorDeep(s, root);
       if (el) {
         const clone = el.cloneNode(true);
-        clone.querySelectorAll("script, style, button, input, iframe, noscript, svg").forEach(e => e.remove());
+        // Deep sanitization: remove all non-content nodes
+        clone.querySelectorAll("script, style, button, input, svg, noscript, iframe, link, .social-sharing").forEach(e => e.remove());
         html += clone.innerHTML.trim() + " ";
       }
-    }
-    return html.trim();
+    });
+    return sanitizeHtmlForShopify(html.trim());
+  }
+
+  function sanitizeHtmlForShopify(html) {
+    if (!html) return "";
+    // Shopify allows basic structural tags. We clean everything else.
+    return html
+      .replace(/<div[^>]*>/gi, "<p>")
+      .replace(/<\/div>/gi, "</p>")
+      .replace(/<(\w+)\s+[^>]*>/gi, "<$1>") // Strip all attributes from tags
+      .replace(/<p>\s*<\/p>/gi, "") // Remove empty paragraphs
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function scrapeDetailedVariants() {
     const options = [];
-    const containers = querySelectorAllDeep(".variant-option, .variation, .product-option, .attribute-group, .swatch-container, .picker-option", root);
-    containers.forEach(container => {
+    querySelectorAllDeep(".variant-option, .variation, .product-option, .swatch-container, .picker-option, .attribute-group, .product-customizer", root).forEach(container => {
       const label = container.querySelector("label, .label, .option-name, .attr-label, .title")?.textContent?.trim().replace(/:$/, "");
       const selected = container.querySelector(".selected, .active, .is-selected, option:checked, [aria-checked=\"true\"]")?.textContent?.trim();
-      if (label && selected && label.length < 30 && selected.length < 50) options.push({ name: label, value: selected });
+      if (label && selected && label.length < 30 && selected.length < 50) {
+        options.push({ name: normalizeAttributeName(label), value: selected });
+      }
     });
     return options.slice(0, 3);
   }
 
+  function normalizeAttributeName(name) {
+    const n = name.toLowerCase().trim();
+    if (n.includes("color") || n.includes("colour") || n.includes("shade") || n.includes("finish")) return "Color";
+    if (n.includes("size") || n.includes("dimension") || n.includes("fit")) return "Size";
+    if (n.includes("material") || n.includes("fabric") || n.includes("composition")) return "Material";
+    return name;
+  }
+
   function scrapeWeight() {
     const text = root.textContent || "";
-    const weightRegex = /(\d+(?:\.\d+)?)\s*(kg|lb|oz|g|grams|ounces|pounds|kg\.|lb\.)/i;
-    const match = text.match(weightRegex);
+    const match = text.match(/(\d+(?:\.\d+)?)\s*(kg|lb|oz|g|grams|ounces|pounds)/i);
     if (match) {
-      const value = parseFloat(match[1]);
-      const unit = match[2].toLowerCase();
-      if (unit.startsWith("kg")) return Math.round(value * 1000);
-      if (unit.startsWith("lb")) return Math.round(value * 453.59);
-      if (unit.startsWith("oz")) return Math.round(value * 28.35);
-      if (unit.startsWith("g")) return Math.round(value);
+      const val = parseFloat(match[1]), unit = match[2].toLowerCase();
+      if (unit.startsWith("kg")) return Math.round(val * 1000);
+      if (unit.startsWith("lb")) return Math.round(val * 453.59);
+      if (unit.startsWith("oz")) return Math.round(val * 28.35);
+      return Math.round(val);
     }
     return 0;
   }
 
-  function visualHeuristicScrape() {
-    const results = { title: "", price: "" };
-    try {
-      const h1 = querySelectorDeep("h1", root);
-      if (h1) results.title = h1.textContent.trim();
-      const currencySymbols = ["$", "€", "£", "¥", "₹"];
-      const candidateElements = querySelectorAllDeep("span, div, b, strong, ins", root)
-        .filter(el => {
-          const text = el.textContent.trim();
-          return currencySymbols.some(s => text.startsWith(s) || text.includes(s)) && text.length < 15;
-        })
-        .sort((a, b) => parseFloat(window.getComputedStyle(b).fontSize) - parseFloat(window.getComputedStyle(a).fontSize));
-      if (candidateElements.length > 0) results.price = candidateElements[0].textContent.trim();
-    } catch (e) {}
-    return results;
-  }
-
-  function scrapeShopifyMeta() {
-    const getMeta = (n) => document.querySelector(`meta[name="${n}"], meta[property="${n}"]`)?.getAttribute("content");
-    return {
-      vendor: getMeta("shopify-seller-name") || getMeta("og:site_name"),
-      product_id: getMeta("shopify-product-id"),
-      category: getMeta("product:category") || getMeta("product_type") || getMeta("product_category")
-    };
-  }
-
-  function findBarcodesInText() {
-    const text = root.textContent || "";
-    const barcodeRegex = /\b(\d{12,14})\b/g;
-    const matches = text.match(barcodeRegex);
-    return matches ? [...new Set(matches)].join(" | ") : "";
-  }
-
   function scrapeDomProduct() {
-    const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", "[data-testid=\"product-title\"]", ".product-name h1", ".pdp-title", ".item-name", ".product-details__title", ".product-info-main .page-title"]);
-    const price = textFromSelectors([".a-price .a-offscreen", ".price", "[data-testid=\"price\"]", ".product-price", ".current-price", ".price-item", ".price-sales", "[itemprop=\"price\"]", ".pdp-price", ".price-wrapper"]);
-    const market = scrapeMarketplaceSpecific();
-    const detailedVariants = scrapeDetailedVariants();
-    const fullDescription = scrapeFullDescription();
-    const grams = scrapeWeight();
-    const visual = visualHeuristicScrape();
-    const shopifyMeta = scrapeShopifyMeta();
-    const barcode = findBarcodesInText();
-    const gallery = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"product-image\"]", ".main-image", ".gallery-item img", ".product-thumbnails img", ".thumb img", ".product-photo img", ".pdp-image", ".image-zoom", ".swiper-slide img", ".product-image-photo"], ["src", "data-src", "data-lazy-src", "srcset", "data-original", "data-zoom-image"]);
-    const uniqueImages = [...new Set(gallery.map(cleanImageUrl))].filter(Boolean);
+    const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", ".product-name h1", ".pdp-title", ".product-details__title", ".page-title", ".item-name"]);
+    const price = textFromSelectors([".a-price .a-offscreen", ".price", ".product-price", ".current-price", ".price-item", ".price-sales", "[itemprop=\"price\"]", ".pdp-price", ".price-wrapper", ".regular-price"]);
+    const images = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"main-image\"] img", ".main-image", ".gallery-item img", ".swiper-slide img", ".product-image-photo", ".bh-main-image"], ["src", "data-src", "srcset", "data-original", "data-zoom-image"]);
+    const uniqueImages = [...new Set(images.map(cleanImageUrl))].filter(Boolean);
+    
+    // Expert resolution
+    const host = window.location.hostname;
+    let expertData = {};
+    if (host.includes("amazon")) expertData = EXPERT_HANDLERS.amazon();
+    else if (host.includes("walmart")) expertData = EXPERT_HANDLERS.walmart();
+    else if (document.querySelector('meta[content*="shopify"]')) expertData = EXPERT_HANDLERS.shopify();
 
     return mergeProductData(
-      { 
-        title: title || visual.title, 
-        price: price || visual.price, 
-        description: fullDescription,
+      {
+        title, price, 
+        description: scrapeFullDescription(),
         image_url: uniqueImages[0] || "",
         additional_image_urls: uniqueImages.slice(1),
-        variant_options: detailedVariants,
-        variant_grams: grams,
-        sku: barcode,
-        extraction_method: "Industrial-DOM-Visual",
-        ...scrapeContactAndSocial(),
-        category: scrapeBreadcrumbs()
+        variant_options: scrapeDetailedVariants(),
+        variant_grams: scrapeWeight(),
+        category: scrapeBreadcrumbs(),
+        extraction_method: "Industrial-DOM-Heuristic"
       },
-      shopifyMeta,
-      market
+      expertData
     );
-  }
-
-  function scrapeMarketingPixels() {
-    const pixels = [];
-    const html = document.documentElement.innerHTML;
-    const patterns = [{ name: "FB", regex: /fbq\('init',\s*'(\d+)'\)/ }, { name: "GA", regex: /gtag\('config',\s*'(G-[A-Z0-9]+|UA-\d+-\d+)'\)/ }, { name: "TikTok", regex: /ttq\.load\('([A-Z0-9]+)'\)/ }, { name: "Pinterest", regex: /pintrk\('load',\s*'(\d+)'\)/ }, { name: "Snapchat", regex: /snaptr\('init',\s*'([a-z0-9-]+)'\)/ }];
-    patterns.forEach(p => { const match = html.match(p.regex); if (match) pixels.push(`${p.name}:${match[1]}`); });
-    return pixels.join(" | ");
-  }
-
-  function scrapeContactAndSocial() {
-    const contact = [], social = [];
-    const socialPatterns = ["facebook.com", "instagram.com", "twitter.com", "x.com", "pinterest.com", "youtube.com", "tiktok.com", "linkedin.com"];
-    querySelectorAllDeep("a[href]", document).forEach(a => {
-      const href = a.getAttribute("href") || "";
-      if (href.startsWith("mailto:")) contact.push(`Email:${href.replace("mailto:", "").split("?")[0]}`);
-      else if (href.startsWith("tel:")) contact.push(`Tel:${href.replace("tel:", "").split("?")[0]}`);
-      else if (socialPatterns.some(p => href.includes(p))) social.push(href);
-    });
-    return { contact_info: [...new Set(contact)].slice(0, 5).join(" | "), social_links: [...new Set(social)].slice(0, 8).join(" | ") };
-  }
-
-  function scrapeMarketplaceSpecific() {
-    const host = window.location.hostname;
-    const registry = {
-      "amazon": { title: ["#productTitle", "#title"], price: [".a-price .a-offscreen", "#priceblock_ourprice"], brand: ["#bylineInfo", "#brand"], sku: ["#ASIN"] },
-      "walmart": { title: ["h1[itemprop=\"name\"]"], price: ["[data-testid=\"item-price\"]"], brand: [".brand-name"] },
-      "ebay": { title: [".x-item-title__mainTitle"], price: [".x-price-primary"], brand: [".x-about-this-item"] },
-      "etsy": { title: [".wt-text-title-03", "h1"], price: [".wt-text-title-03 .currency-value"], brand: [".wt-text-caption"] }
-    };
-    const site = Object.keys(registry).find(key => host.includes(key));
-    if (!site) return {};
-    const config = registry[site];
-    const data = {};
-    for (const [key, selectors] of Object.entries(config)) data[key] = textFromSelectors(selectors);
-    return data;
   }
 
   function mergeProductData(...products) {
     const merged = {};
-    for (const product of products.reverse()) {
-      for (const [key, value] of Object.entries(product || {})) {
-        if (hasMeaningfulValue(value)) merged[key] = value;
-      }
+    for (const p of products.reverse()) {
+      for (const [k, v] of Object.entries(p || {})) if (hasMeaningfulValue(v)) merged[k] = v;
     }
     return merged;
   }
 
-  function hasMeaningfulValue(value) { return Array.isArray(value) ? value.length > 0 : (value !== null && value !== undefined && String(value).trim() !== ""); }
-  function normalizeType(t) { return normalizeArray(t).join(" ").toLowerCase(); }
+  function hasMeaningfulValue(v) { return Array.isArray(v) ? v.length > 0 : (v !== null && v !== undefined && String(v).trim() !== ""); }
   function normalizeArray(v) { return Array.isArray(v) ? v : (v ? [v] : []); }
+  function normalizeType(t) { return normalizeArray(t).join(" ").toLowerCase(); }
   function firstObject(v) { const item = normalizeArray(v)[0]; return (item && typeof item === "object") ? item : {}; }
 
   function textFromSelectors(selectors) {
-    for (const selector of selectors) {
-      const el = querySelectorDeep(selector, root);
-      const text = el?.getAttribute("content") || el?.textContent || "";
-      if (text.trim()) return text.trim();
+    for (const s of selectors) {
+      const el = querySelectorDeep(s, root);
+      const txt = el?.getAttribute("content") || el?.textContent || "";
+      if (txt.trim()) return txt.trim();
     }
     return "";
   }
 
   function scrapeBreadcrumbs() {
     const selectors = [".breadcrumb", ".breadcrumbs", ".nav-breadcrumb", ".pdp-breadcrumbs", "[itemtype*=\"BreadcrumbList\"]"];
-    for (const selector of selectors) {
-      const el = querySelectorDeep(selector, root);
+    for (const s of selectors) {
+      const el = querySelectorDeep(s, root);
       if (el) {
         const items = [...el.querySelectorAll("li, a, span")].map(i => {
-          const text = i.textContent?.trim() || "";
-          return (text.length > 1 && !["/", ">", "|", "»", "\\"].includes(text)) ? text : null;
+          const t = i.textContent?.trim() || "";
+          return (t.length > 1 && !["/", ">", "|", "»", "\\"].includes(t)) ? t : null;
         }).filter(Boolean);
         const cleanItems = items.filter((item, idx) => item !== items[idx - 1]);
         if (cleanItems.length > 0) return cleanItems.join(" > ");
@@ -341,11 +268,11 @@ export function scrapeProductFromPage(targetSelector = null) {
   function attributeValues(selectors, attrs) {
     const attrList = Array.isArray(attrs) ? attrs : [attrs];
     return selectors.flatMap(s => querySelectorAllDeep(s, root).map(el => {
-      for (const attr of attrList) {
-        const val = el.getAttribute(attr);
-        if (val) {
-          if (attr === "srcset") return val.split(",").pop().trim().split(" ")[0];
-          return val;
+      for (const a of attrList) {
+        const v = el.getAttribute(a);
+        if (v) {
+          if (a === "srcset") return v.split(",").pop().trim().split(" ")[0];
+          return v;
         }
       }
       return null;
@@ -363,33 +290,29 @@ export function scrapeProductFromPage(targetSelector = null) {
     } catch (_e) { return url; }
   }
 
-  function querySelectorAllDeep(selector, root = document) {
-    const elements = [...root.querySelectorAll(selector)];
-    const roots = [...root.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
-    for (const shadowRoot of roots) elements.push(...querySelectorAllDeep(selector, shadowRoot));
+  function querySelectorAllDeep(s, r = document) {
+    const elements = [...r.querySelectorAll(s)];
+    const roots = [...r.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
+    for (const sr of roots) elements.push(...querySelectorAllDeep(s, sr));
     return elements;
   }
 
-  function querySelectorDeep(selector, root = document) {
-    const el = root.querySelector(selector);
+  function querySelectorDeep(s, r = document) {
+    const el = r.querySelector(s);
     if (el) return el;
-    const roots = [...root.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
-    for (const shadowRoot of roots) {
-      const target = querySelectorDeep(selector, shadowRoot);
+    const roots = [...r.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
+    for (const sr of roots) {
+      const target = querySelectorDeep(s, sr);
       if (target) return target;
     }
     return null;
   }
 
-  const pageUrl = window.location.href;
-  const pageTitle = document.title || "";
-  const timestamp = new Date().toISOString();
-
   const scriptState = findStateInScripts();
   const jsonLd = findJsonLdProducts();
   const nextData = findNextDataProducts();
   const microdata = findMicrodataProducts();
-  const meta = scrapeMetaProduct();
+  const meta = { ...textFromSelectors(["meta[property=\"og:title\"]"]), extraction_method: "Meta" };
   const dom = scrapeDomProduct();
 
   let products = [];
@@ -404,10 +327,9 @@ export function scrapeProductFromPage(targetSelector = null) {
 
   return products.map(p => ({
     ...p,
-    source_url: pageUrl,
-    source_tab_title: pageTitle,
+    source_url: window.location.href,
+    source_tab_title: document.title,
     source_site: window.location.hostname,
-    extraction_method: p.extraction_method || "fallback",
-    scraped_at: timestamp
+    scraped_at: new Date().toISOString()
   }));
 }
