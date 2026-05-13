@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "DreamShop Product CSV Scraper",
+  "description": "Scrape product details from user-opened Chrome tabs and export a generic shop-agnostic CSV.",
+  "version": "1.0.0",
+  "action": {
+    "default_title": "DreamShop CSV Scraper",
+    "default_popup": "src/ui/popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
+}

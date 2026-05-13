@@ -1,0 +1,22 @@
+export function serializeRowsToCsv(rows, columns) {
+  const header = columns.map(escapeCsvCell).join(",");
+  const body = rows.map((row) => columns.map((column) => escapeCsvCell(row[column] ?? "")).join(","));
+
+  return [header, ...body].join("\r\n");
+}
+
+export function escapeCsvCell(value) {
+  const text = String(value ?? "");
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+
+  return normalized;
+}
+
+export function createTimestampedCsvFilename(prefix = "dreamshop-products", now = new Date()) {
+  const timestamp = now.toISOString().replace(/[:.]/g, "-");
+  return `${prefix}-${timestamp}.csv`;
+}

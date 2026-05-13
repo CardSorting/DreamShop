@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DreamShop CSV Scraper</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="hero">
+        <p class="eyebrow">DreamShop</p>
+        <h1>Product CSV Scraper</h1>
+        <p class="lede">Scrape user-opened product tabs and export one generic shop-agnostic CSV.</p>
+      </header>
+
+      <section class="actions" aria-label="Scraper actions">
+        <button id="scrapeActiveButton" type="button">Scrape active tab</button>
+        <button id="scrapeAllButton" type="button" class="secondary">Scrape all open tabs</button>
+        <button id="downloadButton" type="button" class="success" disabled>Download CSV</button>
+      </section>
+
+      <section class="status-panel" aria-live="polite">
+        <strong id="statusText">Ready to scrape.</strong>
+        <span id="recordCount">0 products captured</span>
+      </section>
+
+      <section class="preview-panel">
+        <div class="panel-heading">
+          <h2>Preview</h2>
+          <button id="clearButton" type="button" class="link-button" disabled>Clear</button>
+        </div>
+        <div id="previewList" class="preview-list empty">No products scraped yet.</div>
+      </section>
+
+      <section class="message-panel">
+        <h2>Warnings</h2>
+        <ul id="messageList" class="message-list">
+          <li>No warnings.</li>
+        </ul>
+      </section>
+    </main>
+
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>
