@@ -47,6 +47,14 @@ elements.searchInput.addEventListener("input", () => {
   state.page = 1;
   render();
 });
+elements.searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    elements.searchInput.value = "";
+    state.page = 1;
+    render();
+  }
+});
+
 elements.loadMoreButton.addEventListener("click", () => {
   state.page++;
   render();
@@ -212,7 +220,8 @@ function renderPreview() {
     const img = document.createElement("img");
     img.className = "product-img";
     img.src = product.image_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23e2e8f0'/%3E%3Cpath d='M20 40l12-15 8 10 6-7 8 12H20z' fill='%2394a3b8'/%3E%3C/svg%3E";
-    img.alt = "";
+    img.alt = product.title || "Product Image Preview";
+
 
     const info = document.createElement("div");
     info.className = "product-info";
@@ -245,6 +254,18 @@ function renderPreview() {
       e.stopPropagation();
       chrome.tabs.create({ url: product.source_url });
     };
+
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "ds-card-btn";
+    copyBtn.textContent = "📋";
+    copyBtn.title = "Copy to Clipboard";
+    copyBtn.onclick = (e) => {
+      e.stopPropagation();
+      const text = `${product.title} - ${product.price} ${product.currency}\n${product.source_url}`;
+      navigator.clipboard.writeText(text);
+      copyBtn.textContent = "✅";
+      setTimeout(() => copyBtn.textContent = "📋", 2000);
+    };
     
     const removeBtn = document.createElement("button");
     removeBtn.className = "ds-card-btn ds-card-btn-danger";
@@ -259,11 +280,12 @@ function renderPreview() {
       }
     };
     
-    cardActions.append(openBtn, removeBtn);
+    cardActions.append(openBtn, copyBtn, removeBtn);
     card.append(img, info, cardActions);
     elements.previewList.append(card);
   });
 }
+
 
 
 function renderMessages() {

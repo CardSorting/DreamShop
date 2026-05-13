@@ -1,6 +1,7 @@
-export function scrapeProductFromPage() {
+export function scrapeProductFromPage(targetSelector = null) {
   // Helpers are intentionally nested so chrome.scripting.executeScript can inject
   // this function as a self-contained page scraper.
+  const root = targetSelector ? (document.querySelector(targetSelector) || document) : document;
 
   function findJsonLdProducts() {
     const scripts = [...document.querySelectorAll('script[type="application/ld+json"]')];
@@ -60,8 +61,8 @@ export function scrapeProductFromPage() {
       vendor: firstObject(primaryOffer.seller).name || product.vendor || "",
       sku: product.sku || product.mpn || product.gtin || "",
       category: product.category || "",
-      image_url: imageValues[0] || "",
-      additional_image_urls: imageValues.slice(1),
+      image_url: cleanImageUrl(imageValues[0] || ""),
+      additional_image_urls: imageValues.slice(1).map(cleanImageUrl),
       rating: aggregateRating.ratingValue || "",
       review_count: aggregateRating.reviewCount || aggregateRating.ratingCount || "",
       variant_name: product.variantName || "",
@@ -78,7 +79,12 @@ export function scrapeProductFromPage() {
         const target = el.querySelector(`[itemprop="${prop}"]`);
         return target?.getAttribute("content") || target?.textContent?.trim() || "";
       };
-      const getImg = (prop) => el.querySelector(`[itemprop="${prop}"]`)?.getAttribute("src") || "";
+      
+      const getImg = (prop) => {
+        const target = el.querySelector(`[itemprop="${prop}"]`);
+        if (!target) return "";
+        return target.getAttribute("src") || target.getAttribute("data-src") || target.getAttribute("content") || "";
+      };
 
       return {
         title: getProp("name"),
@@ -88,7 +94,7 @@ export function scrapeProductFromPage() {
         availability: getProp("availability"),
         brand: getProp("brand"),
         sku: getProp("sku") || getProp("mpn"),
-        image_url: getImg("image"),
+        image_url: cleanImageUrl(getImg("image")),
         rating: el.querySelector('[itemscope][itemtype*="AggregateRating"] [itemprop="ratingValue"]')?.textContent?.trim() || ""
       };
     });
@@ -103,16 +109,16 @@ export function scrapeProductFromPage() {
       currency: meta('meta[property="product:price:currency"]') || meta('meta[property="og:price:currency"]') || "",
       availability: meta('meta[property="product:availability"]') || "",
       brand: meta('meta[property="product:brand"]') || meta('meta[name="brand"]') || "",
-      image_url: meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || ""
+      image_url: cleanImageUrl(meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || "")
     };
   }
 
   function scrapeDomProduct() {
     const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", "[data-testid=\"product-title\"]"]);
     const price = textFromSelectors([".a-price .a-offscreen", ".price", "[data-testid=\"price\"]", ".product-price"]);
-    const image_url = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"product-image\"]"], "src")[0] || "";
+    const image_url = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"product-image\"]", ".main-image"], ["src", "data-src", "data-lazy-src", "srcset"])[0] || "";
 
-    return { title, price, image_url };
+    return { title, price, image_url: cleanImageUrl(image_url) };
   }
 
   function mergeProductData(...products) {
@@ -153,8 +159,29 @@ export function scrapeProductFromPage() {
     return "";
   }
 
-  function attributeValues(selectors, attr) {
-    return selectors.flatMap(s => querySelectorAllDeep(s, root).map(el => el.getAttribute(attr)).filter(Boolean));
+  function attributeValues(selectors, attrs) {
+    const attrList = Array.isArray(attrs) ? attrs : [attrs];
+    return selectors.flatMap(s => querySelectorAllDeep(s, root).map(el => {
+      for (const attr of attrList) {
+        const val = el.getAttribute(attr);
+        if (val) {
+          if (attr === "srcset") return val.split(",")[0].split(" ")[0];
+          return val;
+        }
+      }
+      return null;
+    }).filter(Boolean));
+  }
+
+  function cleanImageUrl(url) {
+    if (!url) return "";
+    try {
+      const u = new URL(url, window.location.href);
+      ["v", "width", "height", "quality"].forEach(p => u.searchParams.delete(p));
+      return u.toString();
+    } catch (_e) {
+      return url;
+    }
   }
 
   /**
@@ -181,7 +208,6 @@ export function scrapeProductFromPage() {
     }
     return null;
   }
-
 
   const pageUrl = window.location.href;
   const pageTitle = document.title || "";

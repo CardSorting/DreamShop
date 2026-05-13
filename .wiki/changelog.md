@@ -2,14 +2,15 @@
 
 ## 2026-05-13
 
-- **Precision Selector Tool**: Launched an interactive crosshair tool for targeted on-page product capture.
-- **Guided Onboarding Experience**: Integrated an intuitive walkthrough for first-time users to improve approachability.
-- **Actionable Item Management**: Added single-item removal and source navigation to the inventory preview.
-- **Dual-Mode Page Interaction**: Upgraded the floating pill with multi-action buttons and real-time product counts.
-- **Preferences Hub (Options UI)**: Launched a dedicated configuration dashboard for user-defined toggles and export formatting.
-- **Deep Shadow DOM Scraper**: Upgraded the extraction engine with recursive shadow root traversal for modern web-component architecture.
-- **Persistent Intelligence Layer**: Integrated `chrome.storage.local` to preserve captured data across sessions.
-- **Extension Badging**: Added real-time inventory count tracking on the extension icon.
+- **High-Velocity Item Management**: Integrated 'Copy to Clipboard' and single-item removal for rapid data processing.
+- **Deep-Media Harvesting Engine**: Engineered lazy-load awareness (data-src/srcset) to capture images deferred by modern shop optimizations.
+- **Precision Selector & Subtree Scraping**: Launched a surgical crosshair tool for targeted on-page harvesting.
+- **Global Commerce Normalization**: Hardened price/currency parsing for international locales and global market codes.
+- **Guided Onboarding Experience**: Integrated an intuitive walkthrough for new users to improve approachability.
+- **Unlimited Storage Sovereignty**: Enabled `unlimitedStorage` for high-volume inventory research.
+- **Industrial-Scale UI (Pagination)**: Transitioned inventory management to a paginated 'Load More' architecture.
+- **Extension Badging & Persistence**: Added real-time badge tracking and storage-backed session persistence.
+
 
 
 
