@@ -39,30 +39,35 @@ async function scrapeTabsToProductSet(tabs, targetSelector = null) {
     };
   }
 
-  const results = await Promise.all(tabs.map(tab => scrapeTab(tab, targetSelector)));
   const products = [];
   const warnings = [];
   const failures = [];
 
-  for (const result of results) {
-    if (!result.ok) {
-      failures.push(formatTabMessage(result.tab, result.error));
-      continue;
-    }
+  // Process tabs in batches of 5 to prevent resource exhaustion and browser crashes
+  const batchSize = 5;
+  for (let i = 0; i < tabs.length; i += batchSize) {
+    const batch = tabs.slice(i, i + batchSize);
+    const results = await Promise.all(batch.map(tab => scrapeTab(tab, targetSelector)));
 
-    for (const rawProduct of result.products) {
-      const product = normalizeProductRecord(rawProduct, {
-        title: result.tab?.title || "",
-        source_tab_title: result.tab?.title || "",
-        source_url: result.tab?.url || ""
-      });
+    for (const result of results) {
+      if (!result.ok) {
+        failures.push(formatTabMessage(result.tab, result.error));
+        continue;
+      }
 
-      const validationWarnings = validateProductRecord(product);
-      validationWarnings.forEach((warning) => warnings.push(formatTabMessage(result.tab, `${product.title || "Unknown"}: ${warning}`)));
-      products.push(product);
+      for (const rawProduct of result.products) {
+        const product = normalizeProductRecord(rawProduct, {
+          title: result.tab?.title || "",
+          source_tab_title: result.tab?.title || "",
+          source_url: result.tab?.url || ""
+        });
+
+        const validationWarnings = validateProductRecord(product);
+        validationWarnings.forEach((warning) => warnings.push(formatTabMessage(result.tab, `${product.title || "Unknown"}: ${warning}`)));
+        products.push(product);
+      }
     }
   }
-
 
   return { products, warnings, failures };
 }

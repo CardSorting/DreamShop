@@ -195,18 +195,36 @@ export function scrapeProductFromPage(targetSelector = null) {
     } catch (_e) { return url; }
   }
 
-  function querySelectorAllDeep(s, r = document) {
-    const elements = [...r.querySelectorAll(s)];
-    const roots = [...r.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
-    for (const sr of roots) elements.push(...querySelectorAllDeep(s, sr));
+  function querySelectorAllDeep(selector, root = document, depth = 0) {
+    if (depth > 20) return []; // Safety boundary
+    const elements = [...root.querySelectorAll(selector)];
+    
+    // Efficiently find all elements with shadow roots using TreeWalker
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: (node) => node.shadowRoot ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+    });
+
+    let node;
+    while (node = walker.nextNode()) {
+      elements.push(...querySelectorAllDeep(selector, node.shadowRoot, depth + 1));
+    }
     return elements;
   }
 
-  function querySelectorDeep(s, r = document) {
-    const el = r.querySelector(s);
+  function querySelectorDeep(selector, root = document, depth = 0) {
+    if (depth > 20) return null;
+    const el = root.querySelector(selector);
     if (el) return el;
-    const roots = [...r.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
-    for (const sr of roots) { const target = querySelectorDeep(s, sr); if (target) return target; }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: (node) => node.shadowRoot ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+    });
+
+    let node;
+    while (node = walker.nextNode()) {
+      const target = querySelectorDeep(selector, node.shadowRoot, depth + 1);
+      if (target) return target;
+    }
     return null;
   }
 
