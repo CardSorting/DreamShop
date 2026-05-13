@@ -12,8 +12,10 @@
     "downloads",
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "unlimitedStorage"
   ],
+
   "background": {
     "service_worker": "src/infrastructure/background.js",
     "type": "module"

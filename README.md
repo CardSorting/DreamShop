@@ -4,12 +4,13 @@
 
 ## Elite-Tier Features
 
+- **Precision Selector Tool**: Use the interactive crosshair tool to click and capture specific products on any complex page.
+- **Guided Onboarding**: An intuitive, step-by-step introduction ensures even non-technical users can start harvesting intelligence immediately.
+- **Actionable Inventory**: Open source URLs or remove specific items directly from the popup's inventory management view.
 - **On-Page Capture Overlay**: An intelligent floating button detects product pages and provides a one-click "Save to DreamShop" experience.
 - **Preferences Hub**: A dedicated options page to customize your experience, including toggling the capture button and configuring export formats.
 - **Deep Shadow DOM Support**: Engineered recursive traversal to harvest data from modern, web-component-based shops (e.g. Nike, Adidas).
-- **Persistent Intelligence**: All captured data is securely persisted in local storage, ensuring your inventory survives browser restarts.
-- **Context Awareness**: Use the right-click context menu to trigger captures instantly from any commercial page.
-- **Glassmorphic Interface**: A premium UI featuring real-time search, tabbed navigation, and live inventory analytics.
+
 - **Universal Normalization**: Deterministically transforms fragmented shop data into a stable, industry-standard CSV schema.
 
 ## Universal CSV Columns

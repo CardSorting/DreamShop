@@ -1,26 +1,29 @@
-/**
- * Content Overlay Script
- * Injects a "Save to DreamShop" button when a product is detected.
- */
-
 (async function() {
   const settings = await chrome.storage.local.get({ enableOverlay: true });
   
-  // Simple heuristic to detect if this might be a product page
-  function isProductPage() {
-    const hasJsonLd = !!document.querySelector('script[type="application/ld+json"]');
-    const hasMetaProduct = !!document.querySelector('meta[property*="product:"], meta[property*="og:price"]');
-    const hasPrice = /[$€£¥]\d+/.test(document.body.innerText.slice(0, 5000));
-    return hasJsonLd || hasMetaProduct || (hasPrice && document.querySelectorAll('h1').length > 0);
+  function getDetectedProducts() {
+    const jsonLd = document.querySelectorAll('script[type="application/ld+json"]');
+    const microdata = document.querySelectorAll('[itemscope][itemtype*="Product"]');
+    const meta = document.querySelectorAll('meta[property*="product:"], meta[property*="og:price"]');
+    if (microdata.length > 0) return microdata.length;
+    if (jsonLd.length > 0) return 1;
+    return meta.length > 0 ? 1 : 0;
   }
 
-  if (!isProductPage()) return;
+  const detectedCount = getDetectedProducts();
+  if (detectedCount === 0) return;
 
   const pill = document.createElement('div');
   pill.className = 'ds-capture-pill';
   pill.innerHTML = `
     <div class="ds-icon">DS</div>
-    <span>Save to DreamShop</span>
+    <div class="ds-content">
+      <span class="ds-label">Capture ${detectedCount > 1 ? detectedCount + ' Products' : 'Product'}</span>
+      <div class="ds-actions">
+        <button class="ds-action-btn" id="dsCaptureAll" title="Capture All Items">⚡</button>
+        <button class="ds-action-btn" id="dsTargeted" title="Select Specific Item">🎯</button>
+      </div>
+    </div>
   `;
 
   document.body.appendChild(pill);
@@ -37,41 +40,117 @@
 
   updateVisibility(settings.enableOverlay);
 
-  // Listen for setting changes
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.enableOverlay) {
       updateVisibility(changes.enableOverlay.newValue);
     }
   });
 
-  pill.addEventListener('click', async (e) => {
+  // Selector Mode Logic
+  let selectorMode = false;
+  const highlightEl = document.createElement('div');
+  highlightEl.style.cssText = 'position:fixed; z-index:2147483646; border:2px solid #6366f1; background:rgba(99,102,241,0.1); pointer-events:none; display:none; transition:all 0.1s ease; border-radius: 8px;';
+  document.body.appendChild(highlightEl);
 
+  function enterSelectorMode() {
+    selectorMode = true;
+    pill.classList.add('ds-selector-active');
+    document.body.style.cursor = 'crosshair';
+    window.addEventListener('mouseover', onHover);
+    window.addEventListener('click', onClick, true);
+  }
+
+  function exitSelectorMode() {
+    selectorMode = false;
+    pill.classList.remove('ds-selector-active');
+    document.body.style.cursor = 'default';
+    highlightEl.style.display = 'none';
+    window.removeEventListener('mouseover', onHover);
+    window.removeEventListener('click', onClick, true);
+  }
+
+  function onHover(e) {
+    if (!selectorMode) return;
+    const target = e.target.closest('[itemscope], [data-testid*="product"], article, .product, .item');
+    if (target) {
+      const rect = target.getBoundingClientRect();
+      highlightEl.style.top = rect.top + 'px';
+      highlightEl.style.left = rect.left + 'px';
+      highlightEl.style.width = rect.width + 'px';
+      highlightEl.style.height = rect.height + 'px';
+      highlightEl.style.display = 'block';
+    } else {
+      highlightEl.style.display = 'none';
+    }
+  }
+
+  async function onClick(e) {
+    if (!selectorMode) return;
+    e.preventDefault();
     e.stopPropagation();
-    pill.innerHTML = '<span>Capturing...</span>';
-    
-    // Message background to run the full scrape coordination
-    // We don't want to duplicate scraper logic here
-    chrome.runtime.sendMessage({ action: "perform-capture" }, (response) => {
-      if (response && response.success) {
-        pill.classList.add('ds-success-pill');
-        pill.innerHTML = '<span>Captured! ✨</span>';
-        setTimeout(() => {
-          pill.classList.remove('ds-success-pill');
-          pill.innerHTML = '<div class="ds-icon">DS</div><span>Save to DreamShop</span>';
-        }, 3000);
+
+    const target = e.target.closest('[itemscope], [data-testid*="product"], article, .product, .item');
+    if (target) {
+      const selector = getUniqueSelector(target);
+      chrome.runtime.sendMessage({ action: "perform-capture", targetSelector: selector }, (res) => {
+        if (res?.success) showStatus('Target Captured! ✨', true);
+        else showStatus('Selection Failed ❌', false);
+      });
+    }
+    exitSelectorMode();
+  }
+
+  function getUniqueSelector(el) {
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    const path = [];
+    while (el.nodeType === Node.ELEMENT_NODE) {
+      let selector = el.nodeName.toLowerCase();
+      if (el.id) {
+        selector += `#${CSS.escape(el.id)}`;
+        path.unshift(selector);
+        break;
       } else {
-        pill.innerHTML = '<span>Capture Failed</span>';
-        setTimeout(() => {
-          pill.innerHTML = '<div class="ds-icon">DS</div><span>Save to DreamShop</span>';
-        }, 3000);
+        let sib = el, nth = 1;
+        while (sib = sib.previousElementSibling) {
+          if (sib.nodeName.toLowerCase() === selector) nth++;
+        }
+        if (nth !== 1) selector += `:nth-of-type(${nth})`;
       }
+      path.unshift(selector);
+      el = el.parentNode;
+    }
+    return path.join(" > ");
+  }
+
+  function showStatus(text, success = true) {
+    const label = pill.querySelector('.ds-label');
+    const originalText = label.textContent;
+    label.textContent = text;
+    if (success) pill.classList.add('ds-success-pill');
+    setTimeout(() => {
+      label.textContent = originalText;
+      pill.classList.remove('ds-success-pill');
+    }, 3000);
+  }
+
+  pill.querySelector('#dsCaptureAll').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showStatus('Capturing...');
+    chrome.runtime.sendMessage({ action: "perform-capture" }, (res) => {
+      if (res?.success) showStatus('Intelligence Captured! ✨');
+      else showStatus('Capture Failed ❌', false);
     });
   });
 
-  // Listen for background triggers (like context menus)
+  pill.querySelector('#dsTargeted').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectorMode) exitSelectorMode();
+    else enterSelectorMode();
+  });
+
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "trigger-background-capture") {
-      pill.click();
+      pill.querySelector('#dsCaptureAll').click();
       sendResponse({ ok: true });
     }
   });

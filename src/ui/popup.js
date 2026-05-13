@@ -1,11 +1,14 @@
 import { downloadGenericProductCsv, scrapeActiveTabProducts, scrapeAllOpenTabProducts } from "../core/productExportCoordinator.js";
-import { getStoredProducts, addProducts, clearAllData, getStoredLogs, addLog } from "../infrastructure/storage.js";
+import { getStoredProducts, addProducts, clearAllData, getStoredLogs, addLog, removeProduct } from "../infrastructure/storage.js";
+
 
 const state = {
   products: [],
   logs: [],
   busy: false,
-  activeTab: "capture"
+  activeTab: "capture",
+  page: 1,
+  pageSize: 20
 };
 
 const elements = {
@@ -26,7 +29,9 @@ const elements = {
   messageToggle: document.querySelector("#messageToggle"),
   logsOverlay: document.querySelector("#logsOverlay"),
   closeLogs: document.querySelector("#closeLogs"),
-  searchInput: document.querySelector("#searchInput")
+  searchInput: document.querySelector("#searchInput"),
+  loadMoreButton: document.querySelector("#loadMoreButton"),
+  loadMoreContainer: document.querySelector("#loadMoreContainer")
 };
 
 // Event Listeners
@@ -38,15 +43,52 @@ elements.downloadButton.addEventListener("click", downloadCsv);
 elements.clearButton.addEventListener("click", clearProducts);
 elements.messageToggle.addEventListener("click", () => elements.logsOverlay.classList.toggle("active"));
 elements.closeLogs.addEventListener("click", () => elements.logsOverlay.classList.remove("active"));
-elements.searchInput.addEventListener("input", () => render());
+elements.searchInput.addEventListener("input", () => {
+  state.page = 1;
+  render();
+});
+elements.loadMoreButton.addEventListener("click", () => {
+  state.page++;
+  render();
+});
+
 
 
 // Initialize
 (async () => {
+  const settings = await chrome.storage.local.get({ ds_first_run: true });
   state.products = await getStoredProducts();
   state.logs = await getStoredLogs();
   render();
+
+  if (settings.ds_first_run) {
+    showOnboarding();
+  }
 })();
+
+function showOnboarding() {
+  const overlay = document.createElement("div");
+  overlay.className = "onboarding-overlay";
+  overlay.innerHTML = `
+    <div class="onboarding-card">
+      <h2>Welcome to DreamShop ✨</h2>
+      <p>Your Intelligence Engine is ready. Here's how to start:</p>
+      <ul class="onboarding-steps">
+        <li><strong>Capture</strong>: Navigate to a product page and click "Current Page" or use the floating button.</li>
+        <li><strong>Inventory</strong>: Switch tabs to manage your items and search through your collection.</li>
+        <li><strong>Export</strong>: One-click Download to save everything to CSV.</li>
+      </ul>
+      <button id="closeOnboarding" class="primary-btn">Got it, let's go!</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  
+  document.querySelector("#closeOnboarding").onclick = async () => {
+    overlay.remove();
+    await chrome.storage.local.set({ ds_first_run: false });
+  };
+}
+
 
 async function runScrape(scrapeAction, busyMessage) {
   setBusy(true, busyMessage);
@@ -150,13 +192,19 @@ function renderPreview() {
         <p>${query ? "No matches found." : "No products found yet."}</p>
         <p class="sub-text">${query ? "Try a different search term." : "Navigate to a shop and click \"Current Page\""}</p>
       </div>`;
+    elements.loadMoreContainer.style.display = "none";
     return;
   }
 
   elements.previewList.classList.remove("empty");
 
-  // Show latest 15 matches
-  filteredProducts.slice().reverse().slice(0, 15).forEach(product => {
+  const totalToShow = state.page * state.pageSize;
+  const pagedProducts = filteredProducts.slice().reverse().slice(0, totalToShow);
+
+  elements.loadMoreContainer.style.display = filteredProducts.length > totalToShow ? "flex" : "none";
+
+  pagedProducts.forEach(product => {
+
 
     const card = document.createElement("div");
     card.className = "product-card";
@@ -184,10 +232,39 @@ function renderPreview() {
 
     meta.append(price, site);
     info.append(title, meta);
-    card.append(img, info);
+    
+    // Action Buttons for Card
+    const cardActions = document.createElement("div");
+    cardActions.className = "ds-card-actions";
+    
+    const openBtn = document.createElement("button");
+    openBtn.className = "ds-card-btn";
+    openBtn.textContent = "🌐";
+    openBtn.title = "Open Source URL";
+    openBtn.onclick = (e) => {
+      e.stopPropagation();
+      chrome.tabs.create({ url: product.source_url });
+    };
+    
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "ds-card-btn ds-card-btn-danger";
+    removeBtn.textContent = "🗑️";
+    removeBtn.title = "Remove Item";
+    removeBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if (confirm(`Remove "${product.title}"?`)) {
+        await removeProduct(product);
+        state.products = await getStoredProducts();
+        render();
+      }
+    };
+    
+    cardActions.append(openBtn, removeBtn);
+    card.append(img, info, cardActions);
     elements.previewList.append(card);
   });
 }
+
 
 function renderMessages() {
   elements.messageList.innerHTML = "";

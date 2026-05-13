@@ -44,9 +44,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "perform-capture") {
-
     // Run the capture coordination logic
-    scrapeActiveTabProducts().then(async (result) => {
+    scrapeActiveTabProducts(message.targetSelector).then(async (result) => {
       if (result.products.length > 0) {
         await addProducts(result.products);
         sendResponse({ success: true, count: result.products.length });
@@ -59,4 +58,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 });
-

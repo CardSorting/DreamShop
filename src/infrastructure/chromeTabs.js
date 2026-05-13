@@ -12,7 +12,7 @@ export async function queryAllScrapableTabs() {
   return filterScrapableTabs(tabs);
 }
 
-export async function scrapeTab(tab) {
+export async function scrapeTab(tab, targetSelector = null) {
   if (!tab?.id) {
     return {
       ok: false,
@@ -24,7 +24,8 @@ export async function scrapeTab(tab) {
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: scrapeProductFromPage
+      func: scrapeProductFromPage,
+      args: [targetSelector]
     });
 
     const scriptResults = result?.result || [];
@@ -39,6 +40,7 @@ export async function scrapeTab(tab) {
         source_tab_title: tab.title || p.source_tab_title || ""
       }))
     };
+
 
   } catch (error) {
     return {

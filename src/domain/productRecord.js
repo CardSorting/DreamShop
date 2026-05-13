@@ -176,27 +176,42 @@ function normalizeList(value) {
 }
 
 function normalizePrice(value) {
-  const text = cleanText(value);
+  let text = cleanText(value);
 
-  if (!text) {
-    return "";
+  if (!text) return "";
+
+  // Handle European/South American format: 1.299,99 -> 1299.99
+  if (text.includes(",") && text.includes(".")) {
+    const commaIndex = text.lastIndexOf(",");
+    const dotIndex = text.lastIndexOf(".");
+    if (commaIndex > dotIndex) {
+      // European: 1.299,99
+      text = text.replace(/\./g, "").replace(",", ".");
+    } else {
+      // US: 1,299.99
+      text = text.replace(/,/g, "");
+    }
+  } else if (text.includes(",")) {
+    // Check if comma is decimal or thousands separator
+    // 1,299 (US int) vs 1,29 (EU decimal)
+    const parts = text.split(",");
+    if (parts[parts.length - 1].length === 2) {
+      // Likely decimal: 1,29
+      text = text.replace(",", ".");
+    } else {
+      // Likely thousands: 1,299
+      text = text.replace(",", "");
+    }
   }
 
-  const priceMatch = text.match(/-?\d+(?:[,.]\d{3})*(?:[,.]\d{1,2})?/);
-
-  if (!priceMatch) {
-    return text;
-  }
-
-  return priceMatch[0].replace(/,/g, "");
+  const priceMatch = text.match(/-?\d+(?:\.\d+)?/);
+  return priceMatch ? priceMatch[0] : text;
 }
 
 function normalizeCurrency(value) {
   const text = cleanText(value).toUpperCase();
 
-  if (!text) {
-    return "";
-  }
+  if (!text) return "";
 
   const symbolMap = {
     "$": "USD",
@@ -204,16 +219,20 @@ function normalizeCurrency(value) {
     "£": "GBP",
     "¥": "JPY",
     "C$": "CAD",
-    "A$": "AUD"
+    "A$": "AUD",
+    "CHF": "CHF",
+    "KR": "SEK",
+    "₹": "INR",
+    "₩": "KRW",
+    "₽": "RUB"
   };
 
-  if (symbolMap[text]) {
-    return symbolMap[text];
-  }
+  if (symbolMap[text]) return symbolMap[text];
 
   const codeMatch = text.match(/[A-Z]{3}/);
   return codeMatch ? codeMatch[0] : text;
 }
+
 
 function inferCurrencyFromText(value) {
   const text = cleanText(value);

@@ -70,7 +70,7 @@ export function scrapeProductFromPage() {
   }
 
   function findMicrodataProducts() {
-    const productElements = querySelectorAllDeep('[itemscope][itemtype*="Product"]');
+    const productElements = querySelectorAllDeep('[itemscope][itemtype*="Product"]', root);
     if (productElements.length === 0) return [];
 
     return productElements.map((el) => {
@@ -146,7 +146,7 @@ export function scrapeProductFromPage() {
 
   function textFromSelectors(selectors) {
     for (const selector of selectors) {
-      const el = querySelectorDeep(selector);
+      const el = querySelectorDeep(selector, root);
       const text = el?.getAttribute("content") || el?.textContent || "";
       if (text.trim()) return text.trim();
     }
@@ -154,7 +154,7 @@ export function scrapeProductFromPage() {
   }
 
   function attributeValues(selectors, attr) {
-    return selectors.flatMap(s => querySelectorAllDeep(s).map(el => el.getAttribute(attr)).filter(Boolean));
+    return selectors.flatMap(s => querySelectorAllDeep(s, root).map(el => el.getAttribute(attr)).filter(Boolean));
   }
 
   /**

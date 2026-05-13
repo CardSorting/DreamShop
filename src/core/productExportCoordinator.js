@@ -2,9 +2,9 @@ import { PRODUCT_CSV_COLUMNS, normalizeProductRecord, validateProductRecord } fr
 import { createTimestampedCsvFilename, serializeRowsToCsv } from "../utils/csv.js";
 import { downloadTextFile, queryActiveTab, queryAllScrapableTabs, scrapeTab } from "../infrastructure/chromeTabs.js";
 
-export async function scrapeActiveTabProducts() {
+export async function scrapeActiveTabProducts(targetSelector = null) {
   const tabs = await queryActiveTab();
-  return scrapeTabsToProductSet(tabs);
+  return scrapeTabsToProductSet(tabs, targetSelector);
 }
 
 export async function scrapeAllOpenTabProducts() {
@@ -29,7 +29,7 @@ export async function downloadGenericProductCsv(products) {
 }
 
 
-async function scrapeTabsToProductSet(tabs) {
+async function scrapeTabsToProductSet(tabs, targetSelector = null) {
   if (!tabs.length) {
     return {
       products: [],
@@ -38,7 +38,7 @@ async function scrapeTabsToProductSet(tabs) {
     };
   }
 
-  const results = await Promise.all(tabs.map(scrapeTab));
+  const results = await Promise.all(tabs.map(tab => scrapeTab(tab, targetSelector)));
   const products = [];
   const warnings = [];
   const failures = [];
