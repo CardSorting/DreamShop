@@ -42,7 +42,8 @@ const elements = {
   downloadAllImgs: document.querySelector("#downloadAllImgs"),
   scanningOverlay: document.querySelector("#scanningOverlay"),
   scannerTitle: document.querySelector("#scannerTitle"),
-  scannerSub: document.querySelector("#scannerSub")
+  scannerSub: document.querySelector("#scannerSub"),
+  sortSelect: document.querySelector("#sortSelect")
 };
 
 let lightboxGallery = [];
@@ -76,11 +77,16 @@ elements.loadMoreButton.addEventListener("click", () => {
 
 elements.downloadImg.addEventListener("click", () => downloadAsset(lightboxCurrentIndex));
 elements.downloadAllImgs.addEventListener("click", async () => {
-  for (let i = 0; i < lightboxGallery.length; i++) {
+  const total = lightboxGallery.length;
+  elements.statusText.textContent = `Dispatching ${total} assets...`;
+  
+  for (let i = 0; i < total; i++) {
     downloadAsset(i);
+    elements.statusText.textContent = `Exporting asset ${i + 1} of ${total}`;
     // Slight delay to be polite to the browser's download queue
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
   }
+  elements.statusText.textContent = "Asset dispatch complete.";
 });
 
 function downloadAsset(index) {
@@ -143,6 +149,21 @@ function updateLightbox() {
   const settings = await chrome.storage.local.get({ ds_first_run: true });
   state.products = await getStoredProducts();
   state.logs = await getStoredLogs();
+
+  // Real-time synchronization with persistence layer
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local") {
+      if (changes.ds_products) {
+        state.products = changes.ds_products.newValue || [];
+        render();
+      }
+      if (changes.ds_logs) {
+        state.logs = changes.ds_logs.newValue || [];
+        renderMessages();
+      }
+    }
+  });
+
   render();
 
   if (settings.ds_first_run) {
@@ -264,6 +285,9 @@ function setBusy(isBusy, title, sub) {
   render();
 }
 
+elements.searchInput.oninput = () => render();
+elements.sortSelect.onchange = () => render();
+
 function render() {
   // Tab UI
   elements.tabCapture.classList.toggle("active", state.activeTab === "capture");
@@ -288,12 +312,21 @@ function render() {
 
 function renderPreview() {
   elements.previewList.innerHTML = "";
-
   const query = elements.searchInput.value.toLowerCase();
   const filteredProducts = state.products.filter(p => 
     p.title?.toLowerCase().includes(query) || 
     p.source_site?.toLowerCase().includes(query)
   );
+
+  // Sort logic
+  const sort = elements.sortSelect.value;
+  filteredProducts.sort((a, b) => {
+    if (sort === "price-low") return (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0);
+    if (sort === "price-high") return (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0);
+    if (sort === "site") return (a.source_site || "").localeCompare(b.source_site || "");
+    // newest (default) - use scraped_at or timestamp or just reverse order
+    return new Date(b.scraped_at || 0) - new Date(a.scraped_at || 0);
+  });
 
   if (!filteredProducts.length) {
     elements.previewList.classList.add("empty");
@@ -443,17 +476,29 @@ function renderMessages() {
 
   if (!state.logs.length) {
     const item = document.createElement("li");
-    item.textContent = "No engine warnings.";
+    item.className = "log-entry empty";
+    item.textContent = "Engine status: Nominal. No forensic warnings detected.";
     elements.messageList.append(item);
     return;
   }
 
   state.logs.forEach(log => {
     const item = document.createElement("li");
-    const time = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    item.textContent = `[${time}] ${log.message}`;
-    if (log.type === "error") item.style.color = "#ef4444";
-    if (log.type === "warning") item.style.color = "#f59e0b";
+    item.className = `log-entry ${log.type}`;
+    
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    
+    const type = document.createElement("span");
+    type.className = "log-type-tag";
+    type.textContent = log.type.toUpperCase();
+    
+    const msg = document.createElement("span");
+    msg.className = "log-msg";
+    msg.textContent = log.message;
+    
+    item.append(time, type, msg);
     elements.messageList.append(item);
   });
 }

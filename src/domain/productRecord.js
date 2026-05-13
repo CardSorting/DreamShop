@@ -1,5 +1,6 @@
 export const PRODUCT_CSV_COLUMNS = [
   "source_site",
+  "extraction_method",
   "source_url",
   "source_tab_title",
   "title",

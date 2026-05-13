@@ -196,19 +196,23 @@
     setTimeout(() => script.remove(), 60000);
   }
 
-  // Real-time Mutation Awareness
+  // Real-time Mutation Awareness with Debouncing
+  let debounceTimer;
   const observer = new MutationObserver(() => {
-    const newCount = getDetectedProducts();
-    const label = pill.querySelector('.ds-label');
-    if (label) {
-      label.textContent = `Capture ${newCount > 1 ? newCount + ' Products' : 'Product'}`;
-    }
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const newCount = getDetectedProducts();
+      const label = pill.querySelector('.ds-label');
+      if (label) {
+        label.textContent = `Capture ${newCount > 1 ? newCount + ' Products' : 'Product'}`;
+      }
+    }, 500); // 500ms debounce to protect UI thread
   });
 
   observer.observe(document.body, { 
     childList: true, 
     subtree: true,
     attributes: true,
-    attributeFilter: ['itemtype', 'class', 'id']
+    attributeFilter: ['itemtype', 'class', 'id', 'itemprop']
   });
 })();

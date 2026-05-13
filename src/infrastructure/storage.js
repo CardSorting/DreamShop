@@ -100,7 +100,16 @@ export async function addLog(message, type = "info") {
 function dedupe(products) {
   const seen = new Set();
   return products.filter((p) => {
-    const key = p.source_url || `${p.title}|${p.price}|${p.sku}`;
+    // Identity key: URL + Title + Price + SKU + Variant
+    const key = [
+      p.source_url,
+      p.title,
+      p.price,
+      p.sku,
+      p.variant_name,
+      p.variant_value
+    ].filter(Boolean).join("|");
+    
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

@@ -11,7 +11,7 @@ export function scrapeProductFromPage(targetSelector = null) {
       .flatMap((script) => parseJsonLd(script.textContent || ""))
       .flatMap(expandJsonLdNode)
       .filter(isProductLike)
-      .map(normalizeJsonLdProduct);
+      .map(p => ({ ...normalizeJsonLdProduct(p), extraction_method: "JSON-LD" }));
   }
 
   function findNextDataProducts() {
@@ -119,7 +119,8 @@ export function scrapeProductFromPage(targetSelector = null) {
         sku: getProp("sku") || getProp("mpn"),
         image_url: cleanImageUrl(getImg("image")),
         category: scrapeBreadcrumbs() || getProp("category"),
-        rating: el.querySelector('[itemscope][itemtype*="AggregateRating"] [itemprop="ratingValue"]')?.textContent?.trim() || ""
+        rating: el.querySelector('[itemscope][itemtype*="AggregateRating"] [itemprop="ratingValue"]')?.textContent?.trim() || "",
+        extraction_method: "Microdata"
       };
     });
   }
@@ -188,6 +189,7 @@ export function scrapeProductFromPage(targetSelector = null) {
         specifications: scrapeSpecifications(),
         marketing_pixels: scrapeMarketingPixels(),
         seo_structure: scrapeSeoStructure(),
+        extraction_method: "DOM-Heuristic",
         ...variantData,
         ...scrapeContactAndSocial()
 
@@ -377,24 +379,37 @@ export function scrapeProductFromPage(targetSelector = null) {
       const text = el?.getAttribute("content") || el?.textContent || "";
       if (text.trim()) return text.trim();
     }
+    
+    // Industrial Fallback: If no specific selectors match, try common heading patterns
+    const fallbackSelectors = ["h1", ".product-title", "title"];
+    for (const selector of fallbackSelectors) {
+      const el = querySelectorDeep(selector, root);
+      const text = el?.textContent || "";
+      if (text.trim() && text.length < 200) return text.trim();
+    }
+    
     return "";
   }
 
   function scrapeBreadcrumbs() {
-
     const selectors = [
       ".breadcrumb", ".breadcrumbs", ".nav-breadcrumb", 
-      "[class*=\"breadcrumb\"]", "[itemtype*=\"BreadcrumbList\"]"
+      ".c-breadcrumb", ".s-breadcrumb", "[class*=\"breadcrumb\"]", 
+      "[itemtype*=\"BreadcrumbList\"]", ".nav-path"
     ];
     for (const selector of selectors) {
       const el = querySelectorDeep(selector, root);
       if (el) {
-        const items = [...el.querySelectorAll("li, a, span")].map(i => i.textContent?.trim()).filter(Boolean);
-        // Deduplicate adjacent identical items and filter out separators like / or >
-        const cleanItems = items.filter((item, idx) => {
-          if (["/", ">", "|", "»"].includes(item)) return false;
-          return item !== items[idx - 1];
-        });
+        // Collect all text from links and spans, ignoring typical separators
+        const items = [...el.querySelectorAll("li, a, span")].map(i => {
+          const text = i.textContent?.trim() || "";
+          // Filter out single character separators
+          return (text.length > 1 && !["/", ">", "|", "»", "\\"].includes(text)) ? text : null;
+        }).filter(Boolean);
+
+        // Deduplicate adjacent identical items
+        const cleanItems = items.filter((item, idx) => item !== items[idx - 1]);
+        
         if (cleanItems.length > 0) return cleanItems.join(" > ");
       }
     }
@@ -495,6 +510,7 @@ export function scrapeProductFromPage(targetSelector = null) {
     source_url: pageUrl,
     source_tab_title: pageTitle,
     source_site: window.location.hostname,
+    extraction_method: p.extraction_method || "fallback",
     scraped_at: timestamp
   }));
 }
