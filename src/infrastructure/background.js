@@ -53,7 +53,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: "No products found" });
       }
     }).catch(err => {
-      sendResponse({ success: false, error: err.message });
+      sendResponse({ success: false, error: err?.message || "Internal engine failure" });
     });
     return true; // Keep channel open for async response
   }

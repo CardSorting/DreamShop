@@ -7,6 +7,18 @@ const STORAGE_KEYS = {
   LOGS: "ds_logs"
 };
 
+/**
+ * Sequential task queue to ensure atomic storage operations.
+ * Prevents race conditions during simultaneous tab captures.
+ */
+let storageQueue = Promise.resolve();
+
+async function enqueueStorageTask(task) {
+  const result = storageQueue.then(task);
+  storageQueue = result.catch(() => {});
+  return result;
+}
+
 export async function getStoredProducts() {
   try {
     const result = await chrome.storage.local.get(STORAGE_KEYS.PRODUCTS);
@@ -28,29 +40,35 @@ export async function saveProducts(products) {
 }
 
 export async function addProducts(newProducts) {
-  const current = await getStoredProducts();
-  const deduped = dedupe([...current, ...newProducts]);
-  await saveProducts(deduped);
-  return deduped;
+  return enqueueStorageTask(async () => {
+    const current = await getStoredProducts();
+    const deduped = dedupe([...current, ...newProducts]);
+    await saveProducts(deduped);
+    return deduped;
+  });
 }
 
 export async function removeProduct(product) {
-  const current = await getStoredProducts();
-  const key = product.source_url || `${product.title}|${product.price}`;
-  const updated = current.filter((p) => {
-    const pKey = p.source_url || `${p.title}|${p.price}`;
-    return pKey !== key;
+  return enqueueStorageTask(async () => {
+    const current = await getStoredProducts();
+    const key = product.source_url || `${product.title}|${product.price}`;
+    const updated = current.filter((p) => {
+      const pKey = p.source_url || `${p.title}|${p.price}`;
+      return pKey !== key;
+    });
+    await saveProducts(updated);
   });
-  await saveProducts(updated);
 }
 
 export async function clearAllData() {
-  try {
-    await chrome.storage.local.clear();
-    updateBadge(0);
-  } catch (error) {
-    console.error("Storage clear failed:", error);
-  }
+  return enqueueStorageTask(async () => {
+    try {
+      await chrome.storage.local.clear();
+      updateBadge(0);
+    } catch (error) {
+      console.error("Storage clear failed:", error);
+    }
+  });
 }
 
 export async function getStoredLogs() {
@@ -63,18 +81,20 @@ export async function getStoredLogs() {
 }
 
 export async function addLog(message, type = "info") {
-  try {
-    const current = await getStoredLogs();
-    const newLog = {
-      message: String(message).slice(0, 500),
-      type,
-      timestamp: new Date().toISOString()
-    };
-    const updated = [newLog, ...current].slice(0, 100);
-    await chrome.storage.local.set({ [STORAGE_KEYS.LOGS]: updated });
-  } catch (error) {
-    // Fail silently for logs to avoid infinite error loops
-  }
+  return enqueueStorageTask(async () => {
+    try {
+      const current = await getStoredLogs();
+      const newLog = {
+        message: String(message).slice(0, 500),
+        type,
+        timestamp: new Date().toISOString()
+      };
+      const updated = [newLog, ...current].slice(0, 100);
+      await chrome.storage.local.set({ [STORAGE_KEYS.LOGS]: updated });
+    } catch (error) {
+      // Fail silently for logs to avoid infinite error loops
+    }
+  });
 }
 
 function dedupe(products) {

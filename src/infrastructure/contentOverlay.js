@@ -15,16 +15,36 @@
 
   const pill = document.createElement('div');
   pill.className = 'ds-capture-pill';
-  pill.innerHTML = `
-    <div class="ds-icon">DS</div>
-    <div class="ds-content">
-      <span class="ds-label">Capture ${detectedCount > 1 ? detectedCount + ' Products' : 'Product'}</span>
-      <div class="ds-actions">
-        <button class="ds-action-btn" id="dsCaptureAll" title="Capture All Items">⚡</button>
-        <button class="ds-action-btn" id="dsTargeted" title="Select Specific Item">🎯</button>
-      </div>
-    </div>
-  `;
+  
+  const icon = document.createElement('div');
+  icon.className = 'ds-icon';
+  icon.textContent = 'DS';
+  
+  const content = document.createElement('div');
+  content.className = 'ds-content';
+  
+  const label = document.createElement('span');
+  label.className = 'ds-label';
+  label.textContent = `Capture ${detectedCount > 1 ? detectedCount + ' Products' : 'Product'}`;
+  
+  const actions = document.createElement('div');
+  actions.className = 'ds-actions';
+  
+  const btnAll = document.createElement('button');
+  btnAll.className = 'ds-action-btn';
+  btnAll.id = 'dsCaptureAll';
+  btnAll.title = 'Capture All Items';
+  btnAll.textContent = '⚡';
+  
+  const btnTargeted = document.createElement('button');
+  btnTargeted.className = 'ds-action-btn';
+  btnTargeted.id = 'dsTargeted';
+  btnTargeted.title = 'Select Specific Item';
+  btnTargeted.textContent = '🎯';
+  
+  actions.append(btnAll, btnTargeted);
+  content.append(label, actions);
+  pill.append(icon, content);
 
   document.body.appendChild(pill);
 
@@ -154,10 +174,9 @@
       sendResponse({ ok: true });
     }
   });
-})();
-
   // SPA Intelligence Bridge
   window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
     if (event.data?.type === 'DS_PRODUCT_DATA_DETECTED') {
       injectSpaData(event.data.data);
     }
@@ -192,3 +211,4 @@
     attributes: true,
     attributeFilter: ['itemtype', 'class', 'id']
   });
+})();

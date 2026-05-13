@@ -29,7 +29,7 @@ export async function scrapeTab(tab, targetSelector = null) {
     });
 
     const scriptResults = result?.result || [];
-    const products = Array.isArray(scriptResults) ? scriptResults : [scriptResults];
+    const products = (Array.isArray(scriptResults) ? scriptResults : [scriptResults]).filter(Boolean);
 
     return {
       ok: true,

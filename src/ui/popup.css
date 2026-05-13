@@ -85,9 +85,12 @@ body {
 
 .brand-name {
   font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: -0.02em;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.03em;
+  background: linear-gradient(90deg, var(--primary), #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .brand-tagline {
@@ -739,4 +742,72 @@ body {
 
 .nav-btn.primary:hover {
   background: var(--primary-hover);
+}
+
+/* --- Industrialized Scanning Overlay --- */
+.scanning-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  animation: fadeIn 0.3s ease;
+}
+
+.scanning-overlay.active {
+  display: flex;
+}
+
+.scanner-container {
+  text-align: center;
+  position: relative;
+  width: 100%;
+  padding: 40px;
+}
+
+.scanner-beam {
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 4px;
+  background: linear-gradient(to right, transparent, var(--primary), white, var(--primary), transparent);
+  box-shadow: 0 0 20px var(--primary);
+  border-radius: 2px;
+  animation: scanLoop 2s infinite ease-in-out;
+  opacity: 0.8;
+}
+
+@keyframes scanLoop {
+  0% { transform: translateY(50px); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(400px); opacity: 0; }
+}
+
+.scanner-icon {
+  font-size: 64px;
+  margin-bottom: 24px;
+  animation: float 3s infinite ease-in-out;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.scanner-text h3 {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.scanner-text p {
+  font-size: 13px;
+  opacity: 0.6;
 }

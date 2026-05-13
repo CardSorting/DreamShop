@@ -25,7 +25,7 @@
     
     // Broad detection for product-like objects or state objects containing them
     if (str.includes('"@type":"Product"') || str.includes('"product_id"') || (data.variants && data.title) || data.props?.pageProps?.product) {
-      window.postMessage({ type: 'DS_PRODUCT_DATA_DETECTED', data }, '*');
+      window.postMessage({ type: 'DS_PRODUCT_DATA_DETECTED', data }, window.location.origin);
     }
   }
 

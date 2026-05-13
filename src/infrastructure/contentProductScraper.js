@@ -139,11 +139,33 @@ export function scrapeProductFromPage(targetSelector = null) {
   }
 
 
+  function scrapeActiveVariants() {
+    const variants = [];
+    
+    // Heuristic: look for selected items in option groups
+    const selectedSelectors = [
+      '.selected', '.active', '.is-selected', '[aria-checked="true"]', 
+      '[aria-selected="true"]', 'option:checked', '.swatch-element.selected'
+    ];
+
+    selectedSelectors.forEach(sel => {
+      querySelectorAllDeep(sel, root).forEach(el => {
+        const text = el.textContent?.trim() || el.getAttribute('title') || el.getAttribute('aria-label');
+        if (text && text.length < 30) variants.push(text);
+      });
+    });
+
+    return {
+      variant_name: [...new Set(variants)].join(" / ")
+    };
+  }
+
   function scrapeDomProduct() {
     const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", "[data-testid=\"product-title\"]"]);
     const price = textFromSelectors([".a-price .a-offscreen", ".price", "[data-testid=\"price\"]", ".product-price"]);
     
     const market = scrapeMarketplaceSpecific();
+    const variantData = scrapeActiveVariants();
     
     const gallery = attributeValues([
       "#landingImage", 
@@ -166,6 +188,7 @@ export function scrapeProductFromPage(targetSelector = null) {
         specifications: scrapeSpecifications(),
         marketing_pixels: scrapeMarketingPixels(),
         seo_structure: scrapeSeoStructure(),
+        ...variantData,
         ...scrapeContactAndSocial()
 
       },
@@ -236,20 +259,40 @@ export function scrapeProductFromPage(targetSelector = null) {
     
     const registry = {
       "amazon": {
-        title: ["#productTitle"],
-        price: [".a-price .a-offscreen", "#priceblock_ourprice", "#priceblock_dealprice"],
-        brand: ["#bylineInfo", "#brand"],
-        sku: ["#ASIN"]
+        title: ["#productTitle", "#title", ".a-size-extra-large"],
+        price: [".a-price .a-offscreen", "#priceblock_ourprice", "#priceblock_dealprice", ".a-color-price"],
+        brand: ["#bylineInfo", "#brand", ".po-brand"],
+        sku: ["#ASIN", "#productDetails_db_sections"]
       },
       "walmart": {
-        title: ["h1[itemprop=\"name\"]"],
-        price: ["[data-testid=\"item-price\"]", ".price-characteristic"],
-        brand: [".brand-name"]
+        title: ["h1[itemprop=\"name\"]", "h1.f3"],
+        price: ["[data-testid=\"item-price\"]", ".price-characteristic", ".f2"],
+        brand: [".brand-name", "a[itemprop=\"brand\"]"]
+      },
+      "ebay": {
+        title: [".x-item-title__mainTitle", "h1.vi-title-main"],
+        price: [".x-price-primary", "#prcIsum", ".bin-price-content"],
+        brand: [".x-about-this-item", ".vi-spec-title-text"]
+      },
+      "target": {
+        title: ["[data-test=\"product-title\"]", "h1"],
+        price: ["[data-test=\"product-price\"]", "[data-test=\"@web/Price/PriceFull\"]"],
+        sku: ["[data-test=\"product-dpci\"]"]
+      },
+      "bestbuy": {
+        title: [".heading-5", "h1.heading"],
+        price: [".priceView-customer-price span"],
+        sku: [".sku-id"]
       },
       "etsy": {
-        title: [".wt-text-title-03"],
+        title: [".wt-text-title-03", "h1"],
         price: [".wt-text-title-03 .currency-value", ".wt-display-flex-xs .wt-text-title-03"],
-        brand: [".wt-text-caption"]
+        brand: [".wt-text-caption", ".shop-name-and-title-container"]
+      },
+      "aliexpress": {
+        title: [".product-title-text", "h1"],
+        price: [".product-price-value", ".uniform-banner-box-price"],
+        sku: [".product-id"]
       }
     };
 
@@ -377,11 +420,13 @@ export function scrapeProductFromPage(targetSelector = null) {
     if (!url) return "";
     try {
       let clean = url;
-      // Strip common resizing suffixes for high-res versions
-      clean = clean.replace(/(_\d+x\d+|_thumb|_small|-150x150|-300x300)(\.[a-z]+)$/i, "$2");
+      // Strip common resizing suffixes for high-res versions (Amazon, Shopify, Walmart, etc.)
+      clean = clean.replace(/(_\d+x\d+|_thumb|_small|-150x150|-300x300|_AC_SS\d+|_AC_UY\d+|_SL\d+|_SR\d+,\d+)(\.[a-z]+)$/i, "$2");
+      clean = clean.replace(/(\?|&)v=\d+/, ""); // Strip version numbers
       
       const u = new URL(clean, window.location.href);
-      ["v", "width", "height", "quality", "size", "resize"].forEach(p => u.searchParams.delete(p));
+      // Remove common resizing params
+      ["v", "width", "height", "quality", "size", "resize", "impolicy", "imwidth"].forEach(p => u.searchParams.delete(p));
       return u.toString();
     } catch (_e) {
       return url;

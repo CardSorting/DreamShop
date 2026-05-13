@@ -39,7 +39,10 @@ const elements = {
   nextImg: document.querySelector("#nextImg"),
   imgIndex: document.querySelector("#imgIndex"),
   downloadImg: document.querySelector("#downloadImg"),
-  downloadAllImgs: document.querySelector("#downloadAllImgs")
+  downloadAllImgs: document.querySelector("#downloadAllImgs"),
+  scanningOverlay: document.querySelector("#scanningOverlay"),
+  scannerTitle: document.querySelector("#scannerTitle"),
+  scannerSub: document.querySelector("#scannerSub")
 };
 
 let lightboxGallery = [];
@@ -150,29 +153,50 @@ function updateLightbox() {
 function showOnboarding() {
   const overlay = document.createElement("div");
   overlay.className = "onboarding-overlay";
-  overlay.innerHTML = `
-    <div class="onboarding-card">
-      <h2>Welcome to DreamShop ✨</h2>
-      <p>Your Intelligence Engine is ready. Here's how to start:</p>
-      <ul class="onboarding-steps">
-        <li><strong>Capture</strong>: Navigate to a product page and click "Current Page" or use the floating button.</li>
-        <li><strong>Inventory</strong>: Switch tabs to manage your items and search through your collection.</li>
-        <li><strong>Export</strong>: One-click Download to save everything to CSV.</li>
-      </ul>
-      <button id="closeOnboarding" class="primary-btn">Got it, let's go!</button>
-    </div>
-  `;
-  document.body.appendChild(overlay);
   
-  document.querySelector("#closeOnboarding").onclick = async () => {
+  const card = document.createElement("div");
+  card.className = "onboarding-card";
+  
+  const h2 = document.createElement("h2");
+  h2.textContent = "Welcome to DreamShop ✨";
+  
+  const p = document.createElement("p");
+  p.textContent = "Your Intelligence Engine is ready. Here's how to start:";
+  
+  const ul = document.createElement("ul");
+  ul.className = "onboarding-steps";
+  
+  const steps = [
+    { label: "Capture", desc: "Navigate to a product page and click \"Current Page\" or use the floating button." },
+    { label: "Inventory", desc: "Switch tabs to manage your items and search through your collection." },
+    { label: "Export", desc: "One-click Download to save everything to CSV." }
+  ];
+  
+  steps.forEach(step => {
+    const li = document.createElement("li");
+    const strong = document.createElement("strong");
+    strong.textContent = step.label;
+    li.append(strong, `: ${step.desc}`);
+    ul.appendChild(li);
+  });
+  
+  const btn = document.createElement("button");
+  btn.id = "closeOnboarding";
+  btn.className = "primary-btn";
+  btn.textContent = "Got it, let's go!";
+  btn.onclick = async () => {
     overlay.remove();
     await chrome.storage.local.set({ ds_first_run: false });
   };
+  
+  card.append(h2, p, ul, btn);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
 }
 
 
-async function runScrape(scrapeAction, busyMessage) {
-  setBusy(true, busyMessage);
+async function runScrape(scrapeAction, subMessage) {
+  setBusy(true, "Analyzing Commerce Substrate", subMessage);
   try {
     const result = await scrapeAction();
     state.products = await addProducts(result.products);
@@ -228,9 +252,15 @@ async function clearProducts() {
   }
 }
 
-function setBusy(isBusy, message) {
+function setBusy(isBusy, title, sub) {
   state.busy = isBusy;
-  if (message) elements.statusText.textContent = message;
+  if (isBusy) {
+    elements.scanningOverlay.classList.add("active");
+    if (title) elements.scannerTitle.textContent = title;
+    if (sub) elements.scannerSub.textContent = sub;
+  } else {
+    elements.scanningOverlay.classList.remove("active");
+  }
   render();
 }
 
@@ -267,12 +297,23 @@ function renderPreview() {
 
   if (!filteredProducts.length) {
     elements.previewList.classList.add("empty");
-    elements.previewList.innerHTML = `
-      <div class="empty-state">
-        <span class="empty-icon">${query ? "❓" : "🔍"}</span>
-        <p>${query ? "No matches found." : "No products found yet."}</p>
-        <p class="sub-text">${query ? "Try a different search term." : "Navigate to a shop and click \"Current Page\""}</p>
-      </div>`;
+    
+    const emptyState = document.createElement("div");
+    emptyState.className = "empty-state";
+    
+    const icon = document.createElement("span");
+    icon.className = "empty-icon";
+    icon.textContent = query ? "❓" : "🔍";
+    
+    const p1 = document.createElement("p");
+    p1.textContent = query ? "No matches found." : "No products found yet.";
+    
+    const p2 = document.createElement("p");
+    p2.className = "sub-text";
+    p2.textContent = query ? "Try a different search term." : "Navigate to a shop and click \"Current Page\"";
+    
+    emptyState.append(icon, p1, p2);
+    elements.previewList.appendChild(emptyState);
     elements.loadMoreContainer.style.display = "none";
     return;
   }

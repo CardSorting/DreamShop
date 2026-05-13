@@ -318,8 +318,9 @@ function normalizeTags(value) {
 
 function normalizeRating(value) {
   const text = cleanText(value);
-  const match = text.match(/\d+(?:\.\d+)?/);
-  return match ? match[0] : text;
+  // Match "4.5 out of 5" or "4.5/5" or just "4.5"
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*\d+/i) || text.match(/\d+(?:\.\d+)?/);
+  return match ? match[1] || match[0] : text;
 }
 
 function normalizeInteger(value) {
