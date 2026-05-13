@@ -20,7 +20,11 @@ export const PRODUCT_CSV_COLUMNS = [
   "specifications",
   "marketing_pixels",
   "seo_structure",
+  "contact_info",
+  "social_links",
+  "video_url",
   "image_url",
+
 
 
   "additional_image_urls",
@@ -103,7 +107,11 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
     specifications: cleanText(rawProduct.specifications || ""),
     marketing_pixels: cleanText(rawProduct.marketing_pixels || ""),
     seo_structure: cleanText(rawProduct.seo_structure || ""),
+    contact_info: cleanText(rawProduct.contact_info || ""),
+    social_links: cleanText(rawProduct.social_links || ""),
+    video_url: cleanText(rawProduct.video_url || ""),
     image_url: primaryImage,
+
 
 
     additional_image_urls: additionalImages.join(" | "),

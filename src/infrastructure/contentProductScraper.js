@@ -86,9 +86,11 @@ export function scrapeProductFromPage(targetSelector = null) {
       rating: aggregateRating.ratingValue || "",
       review_count: aggregateRating.reviewCount || aggregateRating.ratingCount || "",
       variant_name: data.variantName || "",
-      variant_value: data.variantValue || ""
+      variant_value: data.variantValue || "",
+      video_url: data.video?.contentUrl || data.video?.embedUrl || ""
     };
   }
+
 
 
   function findMicrodataProducts() {
@@ -163,7 +165,9 @@ export function scrapeProductFromPage(targetSelector = null) {
         additional_image_urls: uniqueImages.slice(1),
         specifications: scrapeSpecifications(),
         marketing_pixels: scrapeMarketingPixels(),
-        seo_structure: scrapeSeoStructure()
+        seo_structure: scrapeSeoStructure(),
+        ...scrapeContactAndSocial()
+
       },
       market
     );
@@ -198,6 +202,34 @@ export function scrapeProductFromPage(targetSelector = null) {
     });
     return headers.slice(0, 10).join(" | ");
   }
+
+  function scrapeContactAndSocial() {
+    const contact = [];
+    const social = [];
+    
+    const socialPatterns = [
+      "facebook.com", "instagram.com", "twitter.com", "x.com", 
+      "pinterest.com", "youtube.com", "tiktok.com", "linkedin.com"
+    ];
+
+    querySelectorAllDeep("a[href]", document).forEach(a => {
+      const href = a.getAttribute("href") || "";
+      
+      if (href.startsWith("mailto:")) {
+        contact.push(`Email:${href.replace("mailto:", "").split("?")[0]}`);
+      } else if (href.startsWith("tel:")) {
+        contact.push(`Tel:${href.replace("tel:", "").split("?")[0]}`);
+      } else if (socialPatterns.some(p => href.includes(p))) {
+        social.push(href);
+      }
+    });
+
+    return {
+      contact_info: [...new Set(contact)].slice(0, 5).join(" | "),
+      social_links: [...new Set(social)].slice(0, 8).join(" | ")
+    };
+  }
+
 
   function scrapeMarketplaceSpecific() {
     const host = window.location.hostname;
