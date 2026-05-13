@@ -13,12 +13,42 @@ export async function scrapeAllOpenTabProducts() {
 }
 
 export function createGenericProductCsv(products) {
-  const normalizedProducts = products.map(p => normalizeProductRecord(p));
-  return serializeRowsToCsv(normalizedProducts, PRODUCT_CSV_COLUMNS);
+  const segments = [];
+  const BATCH_SIZE = 500;
+  
+  // Add Header Segment
+  segments.push(new Blob([PRODUCT_CSV_COLUMNS.join(",") + "\r\n"], { type: "text/csv" }));
+  
+  let currentBatch = [];
+  for (let i = 0; i < products.length; i++) {
+    const record = normalizeProductRecord(products[i]);
+    const line = PRODUCT_CSV_COLUMNS.map((col) => {
+      const val = String(record[col] ?? "");
+      if (/[",\n\r]/.test(val)) {
+        return `"${val.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/"/g, '""')}"`;
+      }
+      return val;
+    }).join(",");
+    
+    currentBatch.push(line + "\r\n");
+    
+    // Periodically commit batch to an immutable Blob segment to free up JS heap
+    if (currentBatch.length >= BATCH_SIZE) {
+      segments.push(new Blob(currentBatch, { type: "text/csv" }));
+      currentBatch = [];
+    }
+  }
+  
+  if (currentBatch.length > 0) {
+    segments.push(new Blob(currentBatch, { type: "text/csv" }));
+  }
+
+  return segments;
 }
 
 export async function downloadGenericProductCsv(products) {
-  const csv = createGenericProductCsv(products);
+  // Directly pass segments to the downloader to avoid any concatenation in JS
+  const segments = createGenericProductCsv(products);
   const settings = await chrome.storage.local.get({ filenameFormat: "timestamp" });
   
   let filename = "dreamshop_inventory.csv";
@@ -26,7 +56,7 @@ export async function downloadGenericProductCsv(products) {
     filename = createTimestampedCsvFilename("dreamshop_export");
   }
   
-  return downloadTextFile(filename, csv);
+  return downloadTextFile(filename, segments);
 }
 
 

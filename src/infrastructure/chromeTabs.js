@@ -52,7 +52,9 @@ export async function scrapeTab(tab, targetSelector = null) {
 }
 
 export async function downloadTextFile(filename, content, mimeType = "text/csv;charset=utf-8") {
-  const blob = new Blob([content], { type: mimeType });
+  // Use array-based Blob constructor for memory efficiency
+  const blobContent = Array.isArray(content) ? content : [content];
+  const blob = new Blob(blobContent, { type: mimeType });
   const url = URL.createObjectURL(blob);
 
   try {
