@@ -10,6 +10,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 async function refreshContextMenu() {
+  if (!chrome.contextMenus) return; // Defensive hardening
+
   const settings = await chrome.storage.local.get({ enableContextMenu: true });
   chrome.contextMenus.removeAll();
   
@@ -22,8 +24,7 @@ async function refreshContextMenu() {
   }
 }
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-
+chrome.contextMenus?.onClicked?.addListener(async (info, tab) => {
   if (info.menuItemId === "capture-page") {
     chrome.tabs.sendMessage(tab.id, { action: "trigger-background-capture" });
   }
