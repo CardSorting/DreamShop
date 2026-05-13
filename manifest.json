@@ -28,9 +28,16 @@
 
     {
       "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/infrastructure/pageInterceptor.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
       "js": ["src/infrastructure/contentOverlay.js"],
       "css": ["src/ui/overlay.css"]
     }
+
   ],
   "host_permissions": [
     "http://*/*",

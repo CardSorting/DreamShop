@@ -155,3 +155,40 @@
     }
   });
 })();
+
+  // SPA Intelligence Bridge
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'DS_PRODUCT_DATA_DETECTED') {
+      injectSpaData(event.data.data);
+    }
+  });
+
+  function injectSpaData(data) {
+    // Check if we already injected this to avoid duplicates
+    const str = JSON.stringify(data);
+    const existing = [...document.querySelectorAll('.ds-spa-data')].find(s => s.textContent === str);
+    if (existing) return;
+
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.className = 'ds-spa-data';
+    script.textContent = str;
+    document.head.appendChild(script);
+    setTimeout(() => script.remove(), 60000);
+  }
+
+  // Real-time Mutation Awareness
+  const observer = new MutationObserver(() => {
+    const newCount = getDetectedProducts();
+    const label = pill.querySelector('.ds-label');
+    if (label) {
+      label.textContent = `Capture ${newCount > 1 ? newCount + ' Products' : 'Product'}`;
+    }
+  });
+
+  observer.observe(document.body, { 
+    childList: true, 
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['itemtype', 'class', 'id']
+  });

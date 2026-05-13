@@ -5,12 +5,26 @@ export function scrapeProductFromPage(targetSelector = null) {
 
   function findJsonLdProducts() {
     const scripts = [...document.querySelectorAll('script[type="application/ld+json"]')];
-    return scripts
+    const spaScripts = [...document.querySelectorAll('script.ds-spa-data')];
+    
+    return [...scripts, ...spaScripts]
       .flatMap((script) => parseJsonLd(script.textContent || ""))
       .flatMap(expandJsonLdNode)
       .filter(isProductLike)
       .map(normalizeJsonLdProduct);
   }
+
+  function findNextDataProducts() {
+    const script = document.querySelector('script#__NEXT_DATA__');
+    if (!script) return [];
+    try {
+      const data = JSON.parse(script.textContent);
+      const product = data.props?.pageProps?.product;
+      if (product) return [normalizeJsonLdProduct(product)];
+    } catch (e) {}
+    return [];
+  }
+
 
   function parseJsonLd(rawJson) {
     const trimmed = rawJson.trim();
@@ -102,6 +116,7 @@ export function scrapeProductFromPage(targetSelector = null) {
         brand: getProp("brand"),
         sku: getProp("sku") || getProp("mpn"),
         image_url: cleanImageUrl(getImg("image")),
+        category: scrapeBreadcrumbs() || getProp("category"),
         rating: el.querySelector('[itemscope][itemtype*="AggregateRating"] [itemprop="ratingValue"]')?.textContent?.trim() || ""
       };
     });
@@ -116,13 +131,17 @@ export function scrapeProductFromPage(targetSelector = null) {
       currency: meta('meta[property="product:price:currency"]') || meta('meta[property="og:price:currency"]') || "",
       availability: meta('meta[property="product:availability"]') || "",
       brand: meta('meta[property="product:brand"]') || meta('meta[name="brand"]') || "",
+      category: scrapeBreadcrumbs(),
       image_url: cleanImageUrl(meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || "")
     };
   }
 
+
   function scrapeDomProduct() {
     const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", "[data-testid=\"product-title\"]"]);
     const price = textFromSelectors([".a-price .a-offscreen", ".price", "[data-testid=\"price\"]", ".product-price"]);
+    
+    const market = scrapeMarketplaceSpecific();
     
     const gallery = attributeValues([
       "#landingImage", 
@@ -136,13 +155,116 @@ export function scrapeProductFromPage(targetSelector = null) {
 
     const uniqueImages = [...new Set(gallery.map(cleanImageUrl))].filter(Boolean);
 
-    return { 
-      title, 
-      price, 
-      image_url: uniqueImages[0] || "",
-      additional_image_urls: uniqueImages.slice(1)
-    };
+    return mergeProductData(
+      { 
+        title, 
+        price, 
+        image_url: uniqueImages[0] || "",
+        additional_image_urls: uniqueImages.slice(1),
+        specifications: scrapeSpecifications(),
+        marketing_pixels: scrapeMarketingPixels(),
+        seo_structure: scrapeSeoStructure()
+      },
+      market
+    );
   }
+
+  function scrapeMarketingPixels() {
+    const pixels = [];
+    const html = document.documentElement.innerHTML;
+    
+    const patterns = [
+      { name: "FB", regex: /fbq\('init',\s*'(\d+)'\)/ },
+      { name: "GA", regex: /gtag\('config',\s*'(G-[A-Z0-9]+|UA-\d+-\d+)'\)/ },
+      { name: "TikTok", regex: /ttq\.load\('([A-Z0-9]+)'\)/ },
+      { name: "Pinterest", regex: /pintrk\('load',\s*'(\d+)'\)/ }
+    ];
+
+    patterns.forEach(p => {
+      const match = html.match(p.regex);
+      if (match) pixels.push(`${p.name}:${match[1]}`);
+    });
+
+    return pixels.join(" | ");
+  }
+
+  function scrapeSeoStructure() {
+    const headers = [];
+    querySelectorAllDeep("h1, h2, h3", root).forEach(h => {
+      const text = h.textContent?.trim();
+      if (text && text.length < 100) {
+        headers.push(`${h.tagName}: ${text}`);
+      }
+    });
+    return headers.slice(0, 10).join(" | ");
+  }
+
+  function scrapeMarketplaceSpecific() {
+    const host = window.location.hostname;
+    
+    const registry = {
+      "amazon": {
+        title: ["#productTitle"],
+        price: [".a-price .a-offscreen", "#priceblock_ourprice", "#priceblock_dealprice"],
+        brand: ["#bylineInfo", "#brand"],
+        sku: ["#ASIN"]
+      },
+      "walmart": {
+        title: ["h1[itemprop=\"name\"]"],
+        price: ["[data-testid=\"item-price\"]", ".price-characteristic"],
+        brand: [".brand-name"]
+      },
+      "etsy": {
+        title: [".wt-text-title-03"],
+        price: [".wt-text-title-03 .currency-value", ".wt-display-flex-xs .wt-text-title-03"],
+        brand: [".wt-text-caption"]
+      }
+    };
+
+    const site = Object.keys(registry).find(key => host.includes(key));
+    if (!site) return {};
+
+    const config = registry[site];
+    const data = {};
+    for (const [key, selectors] of Object.entries(config)) {
+      data[key] = textFromSelectors(selectors);
+    }
+    return data;
+  }
+
+
+  function scrapeSpecifications() {
+    const specs = [];
+    
+    // Scrape tables
+    querySelectorAllDeep("table", root).forEach(table => {
+      const rows = [...table.querySelectorAll("tr")];
+      rows.forEach(row => {
+        const cells = [...row.querySelectorAll("td, th")];
+        if (cells.length >= 2) {
+          const key = cells[0].textContent?.trim().replace(/:$/, "");
+          const val = cells.slice(1).map(c => c.textContent?.trim()).join(" ").trim();
+          if (key && val && key.length < 50) specs.push(`${key}: ${val}`);
+        }
+      });
+    });
+
+    // Scrape definition lists
+    querySelectorAllDeep("dl", root).forEach(dl => {
+      const dts = [...dl.querySelectorAll("dt")];
+      dts.forEach(dt => {
+        const dd = dt.nextElementSibling;
+        if (dd && dd.tagName === "DD") {
+          const key = dt.textContent?.trim().replace(/:$/, "");
+          const val = dd.textContent?.trim();
+          if (key && val && key.length < 50) specs.push(`${key}: ${val}`);
+        }
+      });
+    });
+
+    return specs.join(" | ");
+  }
+
 
 
   function mergeProductData(...products) {
@@ -182,6 +304,28 @@ export function scrapeProductFromPage(targetSelector = null) {
     }
     return "";
   }
+
+  function scrapeBreadcrumbs() {
+
+    const selectors = [
+      ".breadcrumb", ".breadcrumbs", ".nav-breadcrumb", 
+      "[class*=\"breadcrumb\"]", "[itemtype*=\"BreadcrumbList\"]"
+    ];
+    for (const selector of selectors) {
+      const el = querySelectorDeep(selector, root);
+      if (el) {
+        const items = [...el.querySelectorAll("li, a, span")].map(i => i.textContent?.trim()).filter(Boolean);
+        // Deduplicate adjacent identical items and filter out separators like / or >
+        const cleanItems = items.filter((item, idx) => {
+          if (["/", ">", "|", "»"].includes(item)) return false;
+          return item !== items[idx - 1];
+        });
+        if (cleanItems.length > 0) return cleanItems.join(" > ");
+      }
+    }
+    return "";
+  }
+
 
   function attributeValues(selectors, attrs) {
     const attrList = Array.isArray(attrs) ? attrs : [attrs];
@@ -242,17 +386,32 @@ export function scrapeProductFromPage(targetSelector = null) {
   const pageTitle = document.title || "";
   const timestamp = new Date().toISOString();
 
-  // Strategy: Try to find multiple products first (Lists/Collections)
-  let products = findJsonLdProducts();
-  if (products.length === 0) products = findMicrodataProducts();
+  // Strategy prioritization: 
+  // 1. JSON-LD / SPA Data (Highest confidence)
+  // 2. Microdata
+  // 3. Meta Tags
+  // 4. DOM Heuristics (Fallback)
 
-  // If no structured products found, fallback to meta/dom for a single item
-  if (products.length === 0) {
-    const meta = scrapeMetaProduct();
-    const dom = scrapeDomProduct();
-    const merged = mergeProductData(meta, dom);
+  const jsonLd = findJsonLdProducts();
+  const nextData = findNextDataProducts();
+  const microdata = findMicrodataProducts();
+  const meta = scrapeMetaProduct();
+  const dom = scrapeDomProduct();
+
+  // If we found multiple products via structured data, prioritize those
+  let products = [];
+  if (jsonLd.length > 0) {
+    products = jsonLd;
+  } else if (nextData.length > 0) {
+    products = nextData;
+  } else if (microdata.length > 0) {
+    products = microdata;
+  } else {
+    // Single product fallback
+    const merged = mergeProductData(dom, meta, firstObject(microdata), firstObject(nextData), firstObject(jsonLd));
     if (merged.title || merged.price) products = [merged];
   }
+
 
   return products.map(p => ({
     ...p,

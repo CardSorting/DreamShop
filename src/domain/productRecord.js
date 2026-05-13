@@ -17,7 +17,12 @@ export const PRODUCT_CSV_COLUMNS = [
   "sku",
   "category",
   "tags",
+  "specifications",
+  "marketing_pixels",
+  "seo_structure",
   "image_url",
+
+
   "additional_image_urls",
   "variant_name",
   "variant_value",
@@ -95,7 +100,12 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
     sku: cleanText(rawProduct.sku || rawProduct.mpn || rawProduct.gtin || ""),
     category: cleanText(rawProduct.category || rawProduct.productCategory || ""),
     tags: normalizeTags(rawProduct.tags || rawProduct.keywords || rawProduct.category || ""),
+    specifications: cleanText(rawProduct.specifications || ""),
+    marketing_pixels: cleanText(rawProduct.marketing_pixels || ""),
+    seo_structure: cleanText(rawProduct.seo_structure || ""),
     image_url: primaryImage,
+
+
     additional_image_urls: additionalImages.join(" | "),
     variant_name: cleanText(rawProduct.variant_name || rawProduct.variantName || ""),
     variant_value: cleanText(rawProduct.variant_value || rawProduct.variantValue || ""),
