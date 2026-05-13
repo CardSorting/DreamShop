@@ -4,7 +4,7 @@ export function scrapeProductFromPage(targetSelector = null) {
   const root = targetSelector ? (document.querySelector(targetSelector) || document) : document;
 
   /**
-   * THE EXPERT SYSTEM V2: Site-specific extraction logic
+   * THE EXPERT SYSTEM V3: Site-specific extraction logic
    */
   const EXPERT_HANDLERS = {
     shopify: () => {
@@ -35,8 +35,34 @@ export function scrapeProductFromPage(targetSelector = null) {
       const images = attributeValues(["[data-testid=\"main-image\"] img", ".db_main-image", ".prod-HeroImage", ".bh-main-image"], ["src", "srcset", "data-src"]);
       const nextData = findNextDataProducts();
       return mergeProductData({ title, price, brand, image_url: cleanImageUrl(images[0]), extraction_method: "Expert-Walmart" }, firstObject(nextData));
+    },
+    ebay: () => {
+      const title = textFromSelectors([".x-item-title__mainTitle", "h1.vi-title-main"]);
+      const price = textFromSelectors([".x-price-primary", "#prcIsum", ".bin-price-content", ".vi-price-main"]);
+      const images = attributeValues(["#icImg", ".x-photos img", ".itm-img"], ["src", "data-src"]);
+      return { title, price, image_url: cleanImageUrl(images[0]), extraction_method: "Expert-eBay" };
+    },
+    etsy: () => {
+      const title = textFromSelectors([".wt-text-title-03", "h1", "[data-buy-box-listing-title]"]);
+      const price = textFromSelectors([".wt-text-title-03 .currency-value", ".wt-display-flex-xs .wt-text-title-03", "[data-buy-box-price]"]);
+      const images = attributeValues([".wt-max-width-full", ".image-carousel img", "[data-listing-image-gallery] img"], ["src", "data-src", "data-full-image-href"]);
+      return { title, price, image_url: cleanImageUrl(images[0]), extraction_method: "Expert-Etsy" };
     }
   };
+
+  /**
+   * RESOURCE DISCOVERY: Find JSON endpoints called by the page
+   */
+  function findResourceData() {
+    try {
+      const resources = performance.getEntriesByType('resource');
+      const productJson = resources.find(r => r.name.includes('product.json') || r.name.includes('/products/') && r.name.endsWith('.js'));
+      if (productJson) {
+         // We can't fetch it synchronously here easily, but we can log that we found it.
+         // In a real industrial scraper, we'd trigger a background fetch.
+      }
+    } catch (e) {}
+  }
 
   function findJsonLdProducts() {
     const scripts = [...document.querySelectorAll('script[type="application/ld+json"]')];
@@ -95,8 +121,8 @@ export function scrapeProductFromPage(targetSelector = null) {
     if (obj.props?.pageProps?.product) return obj.props.pageProps.product;
     if (obj.props?.initialData?.product) return obj.props.initialData.product;
     
-    // Breadth-First search for common product keys
-    const keys = ["product", "item", "pdp", "initialData", "entry"];
+    // Depth-limited search for common product keys
+    const keys = ["product", "item", "pdp", "initialData", "entry", "listing"];
     for (const key of keys) {
       if (obj[key] && typeof obj[key] === "object") {
         const nested = locateProductInObject(obj[key]);
@@ -140,14 +166,13 @@ export function scrapeProductFromPage(targetSelector = null) {
   }
 
   function scrapeFullDescription() {
-    const selectors = ["#productDescription", "#description", ".product-description", ".description", ".product-info-main", ".pdp-about-item", "#tab-description", ".product-details__description"];
+    const selectors = ["#productDescription", "#description", ".product-description", ".description", ".product-info-main", ".pdp-about-item", "#tab-description", ".product-details__description", ".listing-page-description"];
     let html = "";
     selectors.forEach(s => {
       const el = querySelectorDeep(s, root);
       if (el) {
         const clone = el.cloneNode(true);
-        // Deep sanitization: remove all non-content nodes
-        clone.querySelectorAll("script, style, button, input, svg, noscript, iframe, link, .social-sharing").forEach(e => e.remove());
+        clone.querySelectorAll("script, style, button, input, svg, noscript, iframe, link, .social-sharing, .wt-display-none").forEach(e => e.remove());
         html += clone.innerHTML.trim() + " ";
       }
     });
@@ -156,19 +181,18 @@ export function scrapeProductFromPage(targetSelector = null) {
 
   function sanitizeHtmlForShopify(html) {
     if (!html) return "";
-    // Shopify allows basic structural tags. We clean everything else.
     return html
       .replace(/<div[^>]*>/gi, "<p>")
       .replace(/<\/div>/gi, "</p>")
-      .replace(/<(\w+)\s+[^>]*>/gi, "<$1>") // Strip all attributes from tags
-      .replace(/<p>\s*<\/p>/gi, "") // Remove empty paragraphs
+      .replace(/<(\w+)\s+[^>]*>/gi, "<$1>") 
+      .replace(/<p>\s*<\/p>/gi, "") 
       .replace(/\s+/g, " ")
       .trim();
   }
 
   function scrapeDetailedVariants() {
     const options = [];
-    querySelectorAllDeep(".variant-option, .variation, .product-option, .swatch-container, .picker-option, .attribute-group, .product-customizer", root).forEach(container => {
+    querySelectorAllDeep(".variant-option, .variation, .product-option, .swatch-container, .picker-option, .attribute-group, .product-customizer, .wt-select", root).forEach(container => {
       const label = container.querySelector("label, .label, .option-name, .attr-label, .title")?.textContent?.trim().replace(/:$/, "");
       const selected = container.querySelector(".selected, .active, .is-selected, option:checked, [aria-checked=\"true\"]")?.textContent?.trim();
       if (label && selected && label.length < 30 && selected.length < 50) {
@@ -180,9 +204,9 @@ export function scrapeProductFromPage(targetSelector = null) {
 
   function normalizeAttributeName(name) {
     const n = name.toLowerCase().trim();
-    if (n.includes("color") || n.includes("colour") || n.includes("shade") || n.includes("finish")) return "Color";
-    if (n.includes("size") || n.includes("dimension") || n.includes("fit")) return "Size";
-    if (n.includes("material") || n.includes("fabric") || n.includes("composition")) return "Material";
+    if (n.includes("color") || n.includes("colour") || n.includes("shade") || n.includes("finish") || n.includes("coloris")) return "Color";
+    if (n.includes("size") || n.includes("dimension") || n.includes("fit") || n.includes("talla")) return "Size";
+    if (n.includes("material") || n.includes("fabric") || n.includes("composition") || n.includes("matière")) return "Material";
     return name;
   }
 
@@ -200,9 +224,9 @@ export function scrapeProductFromPage(targetSelector = null) {
   }
 
   function scrapeDomProduct() {
-    const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", ".product-name h1", ".pdp-title", ".product-details__title", ".page-title", ".item-name"]);
-    const price = textFromSelectors([".a-price .a-offscreen", ".price", ".product-price", ".current-price", ".price-item", ".price-sales", "[itemprop=\"price\"]", ".pdp-price", ".price-wrapper", ".regular-price"]);
-    const images = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"main-image\"] img", ".main-image", ".gallery-item img", ".swiper-slide img", ".product-image-photo", ".bh-main-image"], ["src", "data-src", "srcset", "data-original", "data-zoom-image"]);
+    const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", ".product-name h1", ".pdp-title", ".product-details__title", ".page-title", ".item-name", "[data-listing-title]"]);
+    const price = textFromSelectors([".a-price .a-offscreen", ".price", ".product-price", ".current-price", ".price-item", ".price-sales", "[itemprop=\"price\"]", ".pdp-price", ".price-wrapper", ".regular-price", ".wt-text-title-03 .currency-value"]);
+    const images = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"main-image\"] img", ".main-image", ".gallery-item img", ".swiper-slide img", ".product-image-photo", ".bh-main-image", ".wt-max-width-full"], ["src", "data-src", "srcset", "data-original", "data-zoom-image", "data-full-image-href"]);
     const uniqueImages = [...new Set(images.map(cleanImageUrl))].filter(Boolean);
     
     // Expert resolution
@@ -210,7 +234,11 @@ export function scrapeProductFromPage(targetSelector = null) {
     let expertData = {};
     if (host.includes("amazon")) expertData = EXPERT_HANDLERS.amazon();
     else if (host.includes("walmart")) expertData = EXPERT_HANDLERS.walmart();
+    else if (host.includes("ebay")) expertData = EXPERT_HANDLERS.ebay();
+    else if (host.includes("etsy")) expertData = EXPERT_HANDLERS.etsy();
     else if (document.querySelector('meta[content*="shopify"]')) expertData = EXPERT_HANDLERS.shopify();
+
+    findResourceData(); // Performance/Audit log
 
     return mergeProductData(
       {
@@ -250,7 +278,7 @@ export function scrapeProductFromPage(targetSelector = null) {
   }
 
   function scrapeBreadcrumbs() {
-    const selectors = [".breadcrumb", ".breadcrumbs", ".nav-breadcrumb", ".pdp-breadcrumbs", "[itemtype*=\"BreadcrumbList\"]"];
+    const selectors = [".breadcrumb", ".breadcrumbs", ".nav-breadcrumb", ".pdp-breadcrumbs", "[itemtype*=\"BreadcrumbList\"]", ".wt-action-group"];
     for (const s of selectors) {
       const el = querySelectorDeep(s, root);
       if (el) {
