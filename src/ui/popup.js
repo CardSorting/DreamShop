@@ -1,9 +1,9 @@
 import { downloadGenericProductCsv, scrapeActiveTabProducts, scrapeAllOpenTabProducts } from "../core/productExportCoordinator.js";
+import { getStoredProducts, addProducts, clearAllData, getStoredLogs, addLog } from "../infrastructure/storage.js";
 
 const state = {
   products: [],
-  warnings: [],
-  failures: [],
+  logs: [],
   busy: false,
   activeTab: "capture"
 };
@@ -25,7 +25,8 @@ const elements = {
   sourceCount: document.querySelector("#sourceCount"),
   messageToggle: document.querySelector("#messageToggle"),
   logsOverlay: document.querySelector("#logsOverlay"),
-  closeLogs: document.querySelector("#closeLogs")
+  closeLogs: document.querySelector("#closeLogs"),
+  searchInput: document.querySelector("#searchInput")
 };
 
 // Event Listeners
@@ -37,24 +38,33 @@ elements.downloadButton.addEventListener("click", downloadCsv);
 elements.clearButton.addEventListener("click", clearProducts);
 elements.messageToggle.addEventListener("click", () => elements.logsOverlay.classList.toggle("active"));
 elements.closeLogs.addEventListener("click", () => elements.logsOverlay.classList.remove("active"));
+elements.searchInput.addEventListener("input", () => render());
 
-render();
+
+// Initialize
+(async () => {
+  state.products = await getStoredProducts();
+  state.logs = await getStoredLogs();
+  render();
+})();
 
 async function runScrape(scrapeAction, busyMessage) {
   setBusy(true, busyMessage);
   try {
     const result = await scrapeAction();
-    // The coordinator might return a single result or a list of results if it handles multiple tabs
-    // In this case, result.products is already an array from contentProductScraper.js
-    state.products = dedupeProducts([...state.products, ...result.products]);
-    state.warnings = [...state.warnings, ...result.warnings];
-    state.failures = [...state.failures, ...result.failures];
+    state.products = await addProducts(result.products);
+    
+    for (const warn of result.warnings) await addLog(warn, "warning");
+    for (const fail of result.failures) await addLog(fail, "error");
+    
+    state.logs = await getStoredLogs();
     
     elements.statusText.textContent = result.products.length
       ? `Intelligence gathered: ${result.products.length} items.`
       : "No commercial data found.";
   } catch (error) {
-    state.failures.push(error?.message || "Internal engine failure.");
+    await addLog(error?.message || "Internal engine failure.", "error");
+    state.logs = await getStoredLogs();
     elements.statusText.textContent = "Operation failed.";
   } finally {
     setBusy(false);
@@ -68,8 +78,11 @@ async function downloadCsv() {
   try {
     await downloadGenericProductCsv(state.products);
     elements.statusText.textContent = "Export dispatched.";
+    await addLog("CSV export initiated.");
+    state.logs = await getStoredLogs();
   } catch (error) {
-    state.failures.push(error?.message || "Export failure.");
+    await addLog(error?.message || "Export failure.", "error");
+    state.logs = await getStoredLogs();
     elements.statusText.textContent = "Export failed.";
   } finally {
     setBusy(false);
@@ -82,12 +95,14 @@ function switchTab(tabId) {
   render();
 }
 
-function clearProducts() {
-  state.products = [];
-  state.warnings = [];
-  state.failures = [];
-  elements.statusText.textContent = "Intelligence purged.";
-  render();
+async function clearProducts() {
+  if (confirm("Are you sure you want to purge all captured intelligence?")) {
+    await clearAllData();
+    state.products = [];
+    state.logs = await getStoredLogs();
+    elements.statusText.textContent = "Intelligence purged.";
+    render();
+  }
 }
 
 function setBusy(isBusy, message) {
@@ -107,7 +122,7 @@ function render() {
   elements.scrapeActiveButton.disabled = state.busy;
   elements.scrapeAllButton.disabled = state.busy;
   elements.downloadButton.disabled = state.busy || !state.products.length;
-  elements.clearButton.disabled = state.busy || (!state.products.length && !state.warnings.length && !state.failures.length);
+  elements.clearButton.disabled = state.busy || !state.products.length;
 
   // Stats
   elements.recordCount.textContent = `${state.products.length} item${state.products.length === 1 ? "" : "s"}`;
@@ -121,20 +136,28 @@ function render() {
 function renderPreview() {
   elements.previewList.innerHTML = "";
 
-  if (!state.products.length) {
+  const query = elements.searchInput.value.toLowerCase();
+  const filteredProducts = state.products.filter(p => 
+    p.title?.toLowerCase().includes(query) || 
+    p.source_site?.toLowerCase().includes(query)
+  );
+
+  if (!filteredProducts.length) {
     elements.previewList.classList.add("empty");
     elements.previewList.innerHTML = `
       <div class="empty-state">
-        <span class="empty-icon">🔍</span>
-        <p>No products found yet.</p>
-        <p class="sub-text">Navigate to a shop and click "Current Page"</p>
+        <span class="empty-icon">${query ? "❓" : "🔍"}</span>
+        <p>${query ? "No matches found." : "No products found yet."}</p>
+        <p class="sub-text">${query ? "Try a different search term." : "Navigate to a shop and click \"Current Page\""}</p>
       </div>`;
     return;
   }
 
   elements.previewList.classList.remove("empty");
 
-  state.products.slice().reverse().slice(0, 15).forEach(product => {
+  // Show latest 15 matches
+  filteredProducts.slice().reverse().slice(0, 15).forEach(product => {
+
     const card = document.createElement("div");
     card.className = "product-card";
 
@@ -168,29 +191,21 @@ function renderPreview() {
 
 function renderMessages() {
   elements.messageList.innerHTML = "";
-  const messages = [...state.failures, ...state.warnings];
 
-  if (!messages.length) {
+  if (!state.logs.length) {
     const item = document.createElement("li");
     item.textContent = "No engine warnings.";
     elements.messageList.append(item);
     return;
   }
 
-  messages.slice(-20).forEach(msg => {
+  state.logs.forEach(log => {
     const item = document.createElement("li");
-    item.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    const time = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    item.textContent = `[${time}] ${log.message}`;
+    if (log.type === "error") item.style.color = "#ef4444";
+    if (log.type === "warning") item.style.color = "#f59e0b";
     elements.messageList.append(item);
-  });
-}
-
-function dedupeProducts(products) {
-  const seen = new Set();
-  return products.filter((p) => {
-    const key = p.source_url || `${p.title}|${p.price}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
   });
 }
 

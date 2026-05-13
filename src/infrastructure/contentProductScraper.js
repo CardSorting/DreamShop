@@ -70,11 +70,14 @@ export function scrapeProductFromPage() {
   }
 
   function findMicrodataProducts() {
-    const productElements = [...document.querySelectorAll('[itemscope][itemtype*="Product"]')];
+    const productElements = querySelectorAllDeep('[itemscope][itemtype*="Product"]');
     if (productElements.length === 0) return [];
 
     return productElements.map((el) => {
-      const getProp = (prop) => el.querySelector(`[itemprop="${prop}"]`)?.getAttribute("content") || el.querySelector(`[itemprop="${prop}"]`)?.textContent?.trim() || "";
+      const getProp = (prop) => {
+        const target = el.querySelector(`[itemprop="${prop}"]`);
+        return target?.getAttribute("content") || target?.textContent?.trim() || "";
+      };
       const getImg = (prop) => el.querySelector(`[itemprop="${prop}"]`)?.getAttribute("src") || "";
 
       return {
@@ -143,7 +146,7 @@ export function scrapeProductFromPage() {
 
   function textFromSelectors(selectors) {
     for (const selector of selectors) {
-      const el = document.querySelector(selector);
+      const el = querySelectorDeep(selector);
       const text = el?.getAttribute("content") || el?.textContent || "";
       if (text.trim()) return text.trim();
     }
@@ -151,8 +154,34 @@ export function scrapeProductFromPage() {
   }
 
   function attributeValues(selectors, attr) {
-    return selectors.flatMap(s => [...document.querySelectorAll(s)].map(el => el.getAttribute(attr)).filter(Boolean));
+    return selectors.flatMap(s => querySelectorAllDeep(s).map(el => el.getAttribute(attr)).filter(Boolean));
   }
+
+  /**
+   * Helper to find elements across Shadow DOM boundaries
+   */
+  function querySelectorAllDeep(selector, root = document) {
+    const elements = [...root.querySelectorAll(selector)];
+    const roots = [...root.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
+    
+    for (const shadowRoot of roots) {
+      elements.push(...querySelectorAllDeep(selector, shadowRoot));
+    }
+    return elements;
+  }
+
+  function querySelectorDeep(selector, root = document) {
+    const el = root.querySelector(selector);
+    if (el) return el;
+
+    const roots = [...root.querySelectorAll("*")].map(el => el.shadowRoot).filter(Boolean);
+    for (const shadowRoot of roots) {
+      const target = querySelectorDeep(selector, shadowRoot);
+      if (target) return target;
+    }
+    return null;
+  }
+
 
   const pageUrl = window.location.href;
   const pageTitle = document.title || "";

@@ -11,7 +11,24 @@
     "activeTab",
     "downloads",
     "scripting",
+    "storage",
     "tabs"
+  ],
+  "background": {
+    "service_worker": "src/infrastructure/background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "src/ui/options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/infrastructure/contentOverlay.js"],
+      "css": ["src/ui/overlay.css"]
+    }
   ],
   "host_permissions": [
     "http://*/*",

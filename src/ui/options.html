@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DreamShop | Preferences</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <div class="options-shell">
+      <aside class="sidebar">
+        <div class="logo-area">
+          <div class="logo-icon">DS</div>
+          <h1>DreamShop</h1>
+        </div>
+        <nav class="side-nav">
+          <a href="#general" class="nav-link active">General</a>
+          <a href="#export" class="nav-link">Export Settings</a>
+          <a href="#about" class="nav-link">About</a>
+        </nav>
+      </aside>
+
+      <main class="main-content">
+        <section id="general" class="settings-section">
+          <h2>General Preferences</h2>
+          <p class="section-desc">Manage how DreamShop interacts with your browser.</p>
+
+          <div class="setting-card">
+            <div class="setting-info">
+              <strong>On-Page Capture Button</strong>
+              <p>Show a floating capture button on detected product pages.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enableOverlay" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-card">
+            <div class="setting-info">
+              <strong>Context Menu Integration</strong>
+              <p>Show "Capture Products" in the right-click menu.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enableContextMenu" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </section>
+
+        <section id="export" class="settings-section">
+          <h2>Export Settings</h2>
+          <p class="section-desc">Customize your data output format.</p>
+
+          <div class="setting-card">
+            <div class="setting-info">
+              <strong>CSV Filename Format</strong>
+              <p>Include date and source site in the filename.</p>
+            </div>
+            <select id="filenameFormat">
+              <option value="timestamp">dreamshop_export_[timestamp].csv</option>
+              <option value="simple">dreamshop_inventory.csv</option>
+            </select>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="saveButton" class="primary-btn">Save Changes</button>
+          <span id="statusMessage" class="status-msg"></span>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

@@ -18,9 +18,16 @@ export function createGenericProductCsv(products) {
 
 export async function downloadGenericProductCsv(products) {
   const csv = createGenericProductCsv(products);
-  const filename = createTimestampedCsvFilename();
+  const settings = await chrome.storage.local.get({ filenameFormat: "timestamp" });
+  
+  let filename = "dreamshop_inventory.csv";
+  if (settings.filenameFormat === "timestamp") {
+    filename = createTimestampedCsvFilename("dreamshop_export");
+  }
+  
   return downloadTextFile(filename, csv);
 }
+
 
 async function scrapeTabsToProductSet(tabs) {
   if (!tabs.length) {

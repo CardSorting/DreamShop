@@ -4,11 +4,13 @@
 
 ## Elite-Tier Features
 
-- **Multi-Product Intelligence**: Automatically detects and scrapes multiple products from collection pages or search results using a multi-layered extraction engine.
-- **Deep Data Harvesting**: Support for JSON-LD (including complex `@graph` nodes), Schema.org Microdata, and OpenGraph metadata.
+- **On-Page Capture Overlay**: An intelligent floating button detects product pages and provides a one-click "Save to DreamShop" experience.
+- **Preferences Hub**: A dedicated options page to customize your experience, including toggling the capture button and configuring export formats.
+- **Deep Shadow DOM Support**: Engineered recursive traversal to harvest data from modern, web-component-based shops (e.g. Nike, Adidas).
+- **Persistent Intelligence**: All captured data is securely persisted in local storage, ensuring your inventory survives browser restarts.
+- **Context Awareness**: Use the right-click context menu to trigger captures instantly from any commercial page.
+- **Glassmorphic Interface**: A premium UI featuring real-time search, tabbed navigation, and live inventory analytics.
 - **Universal Normalization**: Deterministically transforms fragmented shop data into a stable, industry-standard CSV schema.
-- **Glassmorphic Interface**: A premium, world-class UI with tabbed navigation and real-time capture analytics.
-- **Forensic Logs & Stats**: Real-time auditing of scraping operations and source attribution tracking.
 
 ## Universal CSV Columns
 
@@ -22,10 +24,11 @@ source_site,source_url,source_tab_title,title,description,price,currency,compare
 
 For each targeted tab, the engine executes a prioritized intelligence gathering sequence:
 
-1. **Structured Data Layer**: JSON-LD Product & Offer graphs + Microdata `itemprop` scanning.
+1. **Structured Data Layer**: JSON-LD Product & Offer graphs + Microdata `itemprop` scanning (Shadow DOM aware).
 2. **Meta Layer**: OpenGraph, Twitter, and Product meta-tag forensic analysis.
-3. **DOM Layer**: Heuristic-based selector matching for common marketplace patterns.
+3. **DOM Layer**: Heuristic-based selector matching for common marketplace patterns across shadow boundaries.
 4. **Context Layer**: Source-site attribution and tab context injection.
+
 
 
 ## Install in Chrome
