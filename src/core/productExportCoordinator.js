@@ -13,7 +13,8 @@ export async function scrapeAllOpenTabProducts() {
 }
 
 export function createGenericProductCsv(products) {
-  return serializeRowsToCsv(products, PRODUCT_CSV_COLUMNS);
+  const normalizedProducts = products.map(p => normalizeProductRecord(p));
+  return serializeRowsToCsv(normalizedProducts, PRODUCT_CSV_COLUMNS);
 }
 
 export async function downloadGenericProductCsv(products) {

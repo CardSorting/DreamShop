@@ -1,41 +1,33 @@
 export const PRODUCT_CSV_COLUMNS = [
-  "source_site",
-  "extraction_method",
-  "source_url",
-  "source_tab_title",
-  "title",
-  "description",
-  "price",
-  "currency",
-  "compare_at_price",
-  "discount_percentage",
-  "shipping_price",
-  "availability",
-  "return_policy",
-  "brand",
-
-  "vendor",
-  "sku",
-  "category",
-  "tags",
-  "specifications",
-  "marketing_pixels",
-  "seo_structure",
-  "contact_info",
-  "social_links",
-  "video_url",
-  "image_url",
-
-
-
-  "additional_image_urls",
-  "variant_name",
-  "variant_value",
-  "shipping_origin",
-  "rating",
-  "review_count",
-  "notes",
-  "scraped_at"
+  "Handle",
+  "Title",
+  "Body (HTML)",
+  "Vendor",
+  "Standardized Product Type",
+  "Custom Product Type",
+  "Tags",
+  "Published",
+  "Option1 Name",
+  "Option1 Value",
+  "Option2 Name",
+  "Option2 Value",
+  "Variant SKU",
+  "Variant Grams",
+  "Variant Inventory Tracker",
+  "Variant Inventory Qty",
+  "Variant Inventory Policy",
+  "Variant Fulfillment Service",
+  "Variant Price",
+  "Variant Compare At Price",
+  "Variant Requires Shipping",
+  "Variant Taxable",
+  "Variant Barcode",
+  "Image Src",
+  "Image Position",
+  "Image Alt Text",
+  "Gift Card",
+  "SEO Title",
+  "SEO Description"
 ];
 
 const KNOWN_SOURCE_SITES = [
@@ -48,10 +40,32 @@ const KNOWN_SOURCE_SITES = [
 ];
 
 export function createEmptyProductRecord() {
-  return PRODUCT_CSV_COLUMNS.reduce((record, column) => {
-    record[column] = "";
-    return record;
+  const record = PRODUCT_CSV_COLUMNS.reduce((acc, column) => {
+    acc[column] = "";
+    return acc;
   }, {});
+
+  // Internal keys for UI and persistence
+  record.source_site = "";
+  record.source_url = "";
+  record.source_tab_title = "";
+  record.title = "";
+  record.description = "";
+  record.price = "";
+  record.currency = "";
+  record.compare_at_price = "";
+  record.discount_percentage = "";
+  record.shipping_price = "";
+  record.availability = "";
+  record.tags = "";
+  record.sku = "";
+  record.variant_name = "";
+  record.variant_value = "";
+  record.image_url = "";
+  record.additional_image_urls = "";
+  record.scraped_at = "";
+
+  return record;
 }
 
 export function detectSourceSite(sourceUrl = "") {
@@ -70,6 +84,14 @@ export function detectSourceSite(sourceUrl = "") {
   return match?.name || host.replace(/^www\./, "") || "generic";
 }
 
+export function generateHandle(title) {
+  if (!title) return "product";
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
   const record = createEmptyProductRecord();
   const sourceUrl = cleanText(rawProduct.source_url || rawProduct.url || fallback.source_url || "");
@@ -84,47 +106,65 @@ export function normalizeProductRecord(rawProduct = {}, fallback = {}) {
   const price = normalizePrice(priceSource);
   const comparePrice = normalizePrice(rawProduct.compare_at_price || rawProduct.listPrice || "");
   const discount = calculateDiscount(price, comparePrice);
+  const vendor = cleanText(rawProduct.vendor || rawProduct.seller || rawProduct.merchant || rawProduct.brand || "");
+  const category = cleanText(rawProduct.category || rawProduct.productCategory || "");
+  const tags = normalizeTags(rawProduct.tags || rawProduct.keywords || rawProduct.category || "");
+  const sku = cleanText(rawProduct.sku || rawProduct.mpn || rawProduct.gtin || "");
 
-  return {
+  // Update internal fields
+  record.source_site = cleanText(rawProduct.source_site || detectSourceSite(sourceUrl));
+  record.source_url = sourceUrl;
+  record.source_tab_title = cleanText(rawProduct.source_tab_title || fallback.source_tab_title || fallback.title || "");
+  record.title = title;
+  record.description = description;
+  record.price = price;
+  record.currency = normalizeCurrency(rawProduct.currency || rawProduct.priceCurrency || inferCurrencyFromText(priceSource));
+  record.compare_at_price = comparePrice;
+  record.discount_percentage = discount;
+  record.shipping_price = normalizePrice(rawProduct.shipping_price || rawProduct.shippingRate || "");
+  record.availability = normalizeAvailability(rawProduct.availability || "");
+  record.tags = tags;
+  record.sku = sku;
+  record.variant_name = cleanText(rawProduct.variant_name || rawProduct.variantName || "");
+  record.variant_value = cleanText(rawProduct.variant_value || rawProduct.variantValue || "");
+  record.image_url = primaryImage;
+  record.additional_image_urls = additionalImages.join(" | ");
+  record.scraped_at = cleanText(rawProduct.scraped_at || fallback.scraped_at || new Date().toISOString());
 
-    ...record,
-    source_site: cleanText(rawProduct.source_site || detectSourceSite(sourceUrl)),
-    source_url: sourceUrl,
-    source_tab_title: cleanText(rawProduct.source_tab_title || fallback.source_tab_title || fallback.title || ""),
-    title,
-    description,
-    price,
-    currency: normalizeCurrency(rawProduct.currency || rawProduct.priceCurrency || inferCurrencyFromText(priceSource)),
-    compare_at_price: comparePrice,
-    discount_percentage: discount,
-    shipping_price: normalizePrice(rawProduct.shipping_price || rawProduct.shippingRate || ""),
-    availability: normalizeAvailability(rawProduct.availability || ""),
-    return_policy: cleanText(rawProduct.return_policy || rawProduct.hasMerchantReturnPolicy || ""),
-    brand: cleanText(rawProduct.brand || ""),
-    vendor: cleanText(rawProduct.vendor || rawProduct.seller || rawProduct.merchant || rawProduct.brand || ""),
-    sku: cleanText(rawProduct.sku || rawProduct.mpn || rawProduct.gtin || ""),
-    category: cleanText(rawProduct.category || rawProduct.productCategory || ""),
-    tags: normalizeTags(rawProduct.tags || rawProduct.keywords || rawProduct.category || ""),
-    specifications: cleanText(rawProduct.specifications || ""),
-    marketing_pixels: cleanText(rawProduct.marketing_pixels || ""),
-    seo_structure: cleanText(rawProduct.seo_structure || ""),
-    contact_info: cleanText(rawProduct.contact_info || ""),
-    social_links: cleanText(rawProduct.social_links || ""),
-    video_url: cleanText(rawProduct.video_url || ""),
-    image_url: primaryImage,
+  // Populate Shopify CSV fields
+  record["Handle"] = generateHandle(title);
+  record["Title"] = title;
+  record["Body (HTML)"] = description ? `<p>${description}</p>` : "";
+  record["Vendor"] = vendor;
+  record["Standardized Product Type"] = category;
+  record["Custom Product Type"] = category;
+  record["Tags"] = tags;
+  record["Published"] = "true";
+  record["Option1 Name"] = record.variant_name || "Title";
+  record["Option1 Value"] = record.variant_value || "Default Title";
+  record["Option2 Name"] = "";
+  record["Option2 Value"] = "";
+  record["Variant SKU"] = sku;
+  record["Variant Grams"] = "0";
+  record["Variant Inventory Tracker"] = "shopify";
+  record["Variant Inventory Qty"] = "100";
+  record["Variant Inventory Policy"] = "deny";
+  record["Variant Fulfillment Service"] = "manual";
+  record["Variant Price"] = price;
+  record["Variant Compare At Price"] = comparePrice;
+  record["Variant Requires Shipping"] = "true";
+  record["Variant Taxable"] = "true";
+  record["Variant Barcode"] = "";
+  record["Image Src"] = primaryImage;
+  record["Image Position"] = "1";
+  record["Image Alt Text"] = title;
+  record["Gift Card"] = "false";
+  record["SEO Title"] = title;
+  record["SEO Description"] = description;
 
-
-
-    additional_image_urls: additionalImages.join(" | "),
-    variant_name: cleanText(rawProduct.variant_name || rawProduct.variantName || ""),
-    variant_value: cleanText(rawProduct.variant_value || rawProduct.variantValue || ""),
-    shipping_origin: cleanText(rawProduct.shipping_origin || rawProduct.shipsFrom || ""),
-    rating: normalizeRating(rawProduct.rating || rawProduct.ratingValue || ""),
-    review_count: normalizeInteger(rawProduct.review_count || rawProduct.reviewCount || ""),
-    notes,
-    scraped_at: cleanText(rawProduct.scraped_at || fallback.scraped_at || "")
-  };
+  return record;
 }
+
 
 function calculateDiscount(price, compare) {
   const p = parseFloat(price);
