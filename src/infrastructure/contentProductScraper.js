@@ -28,7 +28,12 @@ export function scrapeProductFromPage(targetSelector = null) {
     
     // Expert resolution
     const scraper = getScraperForHost(window.location.hostname);
-    const expertData = scraper ? scraper.scrape() : {};
+    let expertData = {};
+    try {
+      expertData = scraper ? (scraper.scrape(root) || {}) : {};
+    } catch (e) {
+      console.error("Expert scraper failed:", e);
+    }
 
     return mergeProductData(
       expertData,
@@ -49,7 +54,7 @@ export function scrapeProductFromPage(targetSelector = null) {
   const dom = scrapeDomProduct();
 
   let products = [];
-  if (dom.extraction_method.startsWith("Expert")) products = [dom];
+  if (dom.extraction_method && dom.extraction_method.startsWith("Expert")) products = [dom];
   else if (jsonLd.length > 0) products = jsonLd;
   else if (microdata.length > 0) products = microdata;
   else if (dom.title || dom.price) products = [dom];

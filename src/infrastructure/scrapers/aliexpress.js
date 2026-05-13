@@ -16,7 +16,7 @@ import {
 export const aliexpressScraper = {
   name: "aliexpress",
   
-  scrape: () => {
+  scrape: (root = document) => {
     // 1. Forensic State Discovery
     const patterns = [
       { name: "AliExpress_AER", regex: /(?:window\.)?__AER_(?:STATE|DATA)__\s*=\s*({)/ },
@@ -49,7 +49,7 @@ export const aliexpressScraper = {
       "meta[property=\"og:title\"]",
       "meta[name=\"twitter:title\"]",
       "h1"
-    ]);
+    ], root);
     
     const price = textFromSelectors([
       ".product-price-value", 
@@ -69,7 +69,7 @@ export const aliexpressScraper = {
       "meta[property=\"og:price:amount\"]",
       "meta[itemprop=\"price\"]",
       ".pdp-info-right .product-price-value"
-    ]);
+    ], root);
     
     const images = attributeValues([
       "meta[property=\"og:image\"]",
@@ -84,9 +84,9 @@ export const aliexpressScraper = {
       "[class*=\"slider\"] img",
       ".slider-img img",
       "img[src*=\"alicdn.com\"]"
-    ], ["content", "src", "srcset", "data-src", "data-lazy-src"]);
+    ], ["content", "src", "srcset", "data-src", "data-lazy-src"], root);
 
-    const specs = scrapeSpecifications();
+    const specs = scrapeSpecifications(root);
     const variants = extractVariants(d);
     const normalizedImages = uniqueValues([
       ...normalizeImageList(imageComp.imagePathList),
@@ -106,14 +106,14 @@ export const aliexpressScraper = {
       {
         title: productInfo.subject || productInfo.title || title,
         price: extractPrice(priceComp) || price,
-        currency: priceComp.currencyCode || priceComp.currency || d.currency || textFromSelectors(["meta[property=\"product:price:currency\"]", "meta[property=\"og:price:currency\"]"]) || "",
+        currency: priceComp.currencyCode || priceComp.currency || d.currency || textFromSelectors(["meta[property=\"product:price:currency\"]", "meta[property=\"og:price:currency\"]"], root) || "",
         image_url: normalizedImages[0] || "",
         additional_image_urls: normalizedImages,
         sku: productInfo.productId || productInfo.itemId || d.productId || d.itemId || d.id || parseIdFromUrl() || "",
-        vendor: sellerComp.storeName || sellerComp.sellerName || sellerComp.companyName || textFromSelectors(["[class*=\"store-name\"]", "[data-pl=\"store-name\"]", ".store-info__name"]) || "",
+        vendor: sellerComp.storeName || sellerComp.sellerName || sellerComp.companyName || textFromSelectors(["[class*=\"store-name\"]", "[data-pl=\"store-name\"]", ".store-info__name"], root) || "",
         vendor_url: sellerComp.storeNum ? `https://www.aliexpress.com/store/${sellerComp.storeNum}` : (sellerComp.storeUrl || ""),
         specifications: specs,
-        variant_matrix: variants,
+        variants: variants,
         variant_grams: parseWeightFromSpecs(specs),
         rating: feedbackComp.starRating || feedbackComp.averageStar || feedbackComp.evarageStar || 0,
         review_count: feedbackComp.reviewCount || feedbackComp.totalValidNum || feedbackComp.totalNum || 0,
@@ -122,7 +122,7 @@ export const aliexpressScraper = {
       },
       {
         // Secondary defaults from the state object if any
-        description: d.productDetailComponent?.description || d.description || textFromSelectors(["meta[name=\"description\"]", "meta[property=\"og:description\"]"]) || ""
+        description: d.productDetailComponent?.description || d.description || textFromSelectors(["meta[name=\"description\"]", "meta[property=\"og:description\"]"], root) || ""
       }
     );
   }

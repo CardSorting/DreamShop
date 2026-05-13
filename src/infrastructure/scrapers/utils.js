@@ -83,14 +83,24 @@ export function firstObject(v) {
 }
 
 export function extractObjectFromJs(content, startIdx) {
-  if (startIdx === undefined || startIdx === -1) return null;
+  if (startIdx === undefined || startIdx === -1 || !content) return null;
   const jsonStart = content.indexOf("{", startIdx);
   if (jsonStart === -1) return null;
   
-  let depth = 0, inString = false, escape = false;
+  let depth = 0, inString = false, stringChar = null, escape = false;
   for (let i = jsonStart; i < content.length; i++) {
     const char = content[i];
-    if (char === "\"" && !escape) inString = !inString;
+    
+    if (!escape) {
+      if ((char === "\"" || char === "'" || char === "`") && !inString) {
+        inString = true;
+        stringChar = char;
+      } else if (char === stringChar && inString) {
+        inString = false;
+        stringChar = null;
+      }
+    }
+
     if (!inString) {
       if (char === "{") depth++;
       else if (char === "}") {
@@ -172,6 +182,8 @@ export function findStateInScripts(patterns, targetName = null) {
   
   for (const script of scripts) {
     const content = script.textContent;
+    if (!content) continue;
+
     for (const pattern of patterns) {
       if (targetName && pattern.name !== targetName) continue;
       
@@ -180,8 +192,17 @@ export function findStateInScripts(patterns, targetName = null) {
         const jsonStr = extractObjectFromJs(content, match.index);
         if (jsonStr) {
           try {
+            // Attempt standard JSON first
             return { parsed: JSON.parse(jsonStr), name: pattern.name };
-          } catch (e) {}
+          } catch (e) {
+            // Fallback for JS object literals: quote keys and remove trailing commas
+            try {
+              const fixed = jsonStr
+                .replace(/([{,]\s*)([a-zA-Z0-9_$]+)\s*:/g, '$1"$2":')
+                .replace(/,\s*([}\]])/g, '$1');
+              return { parsed: JSON.parse(fixed), name: pattern.name };
+            } catch (e2) {}
+          }
         }
       }
     }
