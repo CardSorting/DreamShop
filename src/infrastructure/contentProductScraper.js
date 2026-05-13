@@ -66,8 +66,12 @@ export function scrapeProductFromPage(targetSelector = null) {
         ".product-price-value", 
         ".price--currentPriceText--V8_y_b5",
         ".uniform-banner-box-price", 
+        ".price--currentPriceText--V8_y_b5",
+        ".uniform-banner-box-price", 
         ".price-current",
-        "[data-pl=\"product-price\"]"
+        "[data-pl=\"product-price\"]",
+        ".pdp-info-right .product-price-value",
+        ".product-price-value"
       ]);
       
       const images = attributeValues([
@@ -173,7 +177,7 @@ export function scrapeProductFromPage(targetSelector = null) {
       { name: "Shopify", regex: /Shopify\.product\s*=\s*({.*?});/s },
       { name: "NextData", regex: /__NEXT_DATA__\s*=\s*({.*?});/s },
       { name: "PreloadedState", regex: /window\.__PRELOADED_STATE__\s*=\s*({.*?});/s },
-      { name: "AliExpress", regex: /window\.(?:runParams|_pdp_data_|_pdpData__|__pdpData__)\s*=\s*({.*?});/s },
+      { name: "AliExpress", regex: /(?:runParams|_pdp_data_|_pdpData__|__pdpData__|__pdpData)\s*=\s*({)/ },
       { name: "Omni", regex: /(?:var|window|let|const)\s+([a-zA-Z0-9_$]+)\s*=\s*({)/ }
     ];
 
@@ -201,35 +205,37 @@ export function scrapeProductFromPage(targetSelector = null) {
 
         const match = content.match(pattern.regex);
         if (match) {
-           // Industrial Brace Balancer: Handles cases where regex is too greedy or script is complex
-           jsonStr = extractObjectFromJs(content, match[0].split("=")[0]);
+           // Industrial Brace Balancer: Uses match.index for absolute positioning accuracy
+           jsonStr = extractObjectFromJs(content, match.index);
         }
 
         if (jsonStr) {
           try {
             const parsed = JSON.parse(jsonStr);
-            const product = locateProductInObject(parsed);
-            if (product) return { ...normalizeJsonLdProduct(product), _raw_data: parsed, extraction_method: `State-${pattern.name}` };
             
-            // Specialized AliExpress mapping
+            // Specialized AliExpress mapping (Runs BEFORE generic locator to ensure context integrity)
             if (pattern.name === "AliExpress") {
               const d = parsed.data || parsed;
               const product = d.productInfoComponent || d.actionModule || d.item || {};
-              const price = d.priceComponent || d.priceModule || {};
+              const priceComp = d.priceComponent || d.priceModule || {};
               const image = d.imageComponent || d.imageModule || {};
               const seller = d.sellerComponent || d.storeModule || {};
+              
               return {
-                title: product.subject || product.title || d.title || d.subject,
-                price: price.formatPrice || price.origPrice?.formattedPrice || price.formatedPrice || d.price,
-                currency: price.currencyCode || d.currency,
-                image_url: image.imagePathList?.[0] || image.mainImage || d.image_url,
-                sku: product.productId || d.id || d.sku,
+                title: product.subject || product.title || d.title || d.subject || "",
+                price: priceComp.formatPrice || priceComp.origPrice?.formattedPrice || priceComp.discountPrice?.mformatPrice || priceComp.formatedPrice || d.price || "",
+                currency: priceComp.currencyCode || d.currency || "",
+                image_url: image.imagePathList?.[0] || image.mainImage || d.image_url || "",
+                sku: product.productId || d.id || d.sku || "",
                 vendor: seller.storeName || seller.sellerName || "",
-                description: d.productDetailComponent?.description || d.description,
+                description: d.productDetailComponent?.description || d.description || "",
                 _raw_data: d,
-                extraction_method: "State-AliExpress-Balancing"
+                extraction_method: "State-AliExpress-Deep-Forensic"
               };
             }
+
+            const product = locateProductInObject(parsed);
+            if (product) return { ...normalizeJsonLdProduct(product), _raw_data: parsed, extraction_method: `State-${pattern.name}` };
           } catch (e) {}
         }
       }
@@ -237,9 +243,8 @@ export function scrapeProductFromPage(targetSelector = null) {
     return null;
   }
 
-  function extractObjectFromJs(content, startKeyword) {
-    const startIdx = content.indexOf(startKeyword);
-    if (startIdx === -1) return null;
+  function extractObjectFromJs(content, startIdx) {
+    if (startIdx === undefined || startIdx === -1) return null;
     const jsonStart = content.indexOf("{", startIdx);
     if (jsonStart === -1) return null;
     
@@ -427,9 +432,9 @@ export function scrapeProductFromPage(targetSelector = null) {
   }
 
   function scrapeDomProduct() {
-    const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", ".product-name h1", ".pdp-title", ".product-details__title", ".page-title", ".item-name", "[data-listing-title]", ".product-title-text"]);
-    const price = textFromSelectors([".a-price .a-offscreen", ".price", ".product-price", ".current-price", ".price-item", ".price-sales", "[itemprop=\"price\"]", ".pdp-price", ".price-wrapper", ".regular-price", ".wt-text-title-03 .currency-value", ".product-price-value"]);
-    const images = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"main-image\"] img", ".main-image", ".gallery-item img", ".swiper-slide img", ".product-image-photo", ".bh-main-image", ".wt-max-width-full", ".mag-magnifier-container img"], ["src", "data-src", "srcset", "data-original", "data-zoom-image", "data-full-image-href"]);
+    const title = textFromSelectors(["#productTitle", ".product-title", "h1.title", ".product-name h1", ".pdp-title", ".product-details__title", ".page-title", ".item-name", "[data-listing-title]", ".product-title-text", "h1"]);
+    const price = textFromSelectors([".a-price .a-offscreen", ".price", ".product-price", ".current-price", ".price-item", ".price-sales", "[itemprop=\"price\"]", ".pdp-price", ".price-wrapper", ".regular-price", ".wt-text-title-03 .currency-value", ".product-price-value", ".price--currentPriceText--V8_y_b5"]);
+    const images = attributeValues(["#landingImage", ".product-image img", "[data-testid=\"main-image\"] img", ".main-image", ".gallery-item img", ".swiper-slide img", ".product-image-photo", ".bh-main-image", ".wt-max-width-full", ".mag-magnifier-container img", ".gallery--image--V8_y_b5"], ["src", "data-src", "srcset", "data-original", "data-zoom-image", "data-full-image-href"]);
     const uniqueImages = [...new Set(images.map(cleanImageUrl))].filter(Boolean);
     
     // Expert resolution
@@ -442,7 +447,9 @@ export function scrapeProductFromPage(targetSelector = null) {
     else if (host.includes("aliexpress")) expertData = EXPERT_HANDLERS.aliexpress();
     else if (document.querySelector('meta[content*="shopify"]')) expertData = EXPERT_HANDLERS.shopify();
 
+    // Priority Resolution: Expert Data must win over Industrial DOM Heuristics
     return mergeProductData(
+      expertData,
       {
         title, price, 
         description: scrapeFullDescription(),
@@ -453,8 +460,7 @@ export function scrapeProductFromPage(targetSelector = null) {
         category: scrapeBreadcrumbs(),
         specifications: scrapeSpecifications(),
         extraction_method: "Industrial-DOM-Heuristic"
-      },
-      expertData
+      }
     );
   }
 
@@ -557,6 +563,20 @@ export function scrapeProductFromPage(targetSelector = null) {
   else {
     const merged = mergeProductData(dom, meta, firstObject(microdata), firstObject(nextData), firstObject(jsonLd));
     if (merged.title || merged.price) products = [merged];
+  }
+
+  // Last-Resort Safeguard: Prevents null returns on atypical product pages
+  if (products.length === 0) {
+    const title = querySelectorDeep("h1")?.textContent?.trim() || document.title.split("-")[0].split("|")[0].trim();
+    const price = textFromSelectors([".price", ".product-price", ".current-price", ".pdp-price", ".price-value"]);
+    if (title) {
+      products = [{
+        title: title || "",
+        price: price || "",
+        image_url: cleanImageUrl(querySelectorDeep("img")?.src || ""),
+        extraction_method: "Last-Resort-Safeguard-Deep"
+      }];
+    }
   }
 
   return products.map(p => ({
